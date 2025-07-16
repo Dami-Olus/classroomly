@@ -1,0 +1,289 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.animate-slideIn {
+  animation: slideIn 0.4s ease-out;
+}
+
+/* Base styles */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply text-gray-900 bg-gray-50;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Focus styles */
+  *:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+
+  /* Button focus styles */
+  button:focus,
+  a:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+}
+
+/* Component styles */
+@layer components {
+  /* Card styles */
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden;
+  }
+
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-md hover:border-gray-300;
+  }
+
+  /* Button styles */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+
+  .btn-success {
+    @apply bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+  }
+
+  /* Form styles */
+  .form-input {
+    @apply block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  .form-error {
+    @apply text-red-600 text-sm mt-1;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-red-800;
+  }
+
+  .badge-info {
+    @apply bg-blue-100 text-blue-800;
+  }
+
+  /* Table styles */
+  .table {
+    @apply min-w-full divide-y divide-gray-200;
+  }
+
+  .table-header {
+    @apply bg-gray-50;
+  }
+
+  .table-header-cell {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+  }
+
+  .table-body {
+    @apply bg-white divide-y divide-gray-200;
+  }
+
+  .table-row {
+    @apply hover:bg-gray-50 transition-colors duration-150;
+  }
+
+  .table-cell {
+    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+  }
+}
+
+/* Calendar enhancements */
+.calendar-enhanced {
+  @apply border-0 shadow-none;
+}
+
+.calendar-enhanced .react-calendar__navigation {
+  @apply mb-4;
+}
+
+.calendar-enhanced .react-calendar__navigation button {
+  @apply bg-blue-50 text-blue-600 hover:bg-blue-100 border-0 rounded-lg px-3 py-2 transition-all duration-200;
+}
+
+.calendar-enhanced .react-calendar__navigation button:disabled {
+  @apply bg-gray-100 text-gray-400;
+}
+
+.calendar-enhanced .react-calendar__month-view__weekdays {
+  @apply text-xs font-semibold text-gray-600 mb-2;
+}
+
+.calendar-enhanced .react-calendar__month-view__weekdays__weekday {
+  @apply p-2 text-center;
+}
+
+.calendar-enhanced .react-calendar__month-view__days__day {
+  @apply p-2 text-center border-0 bg-transparent hover:bg-blue-50 rounded-lg transition-all duration-200 cursor-pointer;
+}
+
+.calendar-enhanced .react-calendar__month-view__days__day--neighboringMonth {
+  @apply text-gray-300;
+}
+
+.calendar-enhanced .react-calendar__month-view__days__day--weekend {
+  @apply text-red-600;
+}
+
+.calendar-enhanced .react-calendar__month-view__days__day--today {
+  @apply bg-blue-100 text-blue-800 font-bold;
+}
+
+.calendar-enhanced .react-calendar__tile--has-bookings {
+  @apply bg-blue-50 border-2 border-blue-200;
+}
+
+.calendar-enhanced .react-calendar__tile--has-bookings:hover {
+  @apply bg-blue-100 border-blue-300;
+}
+
+.calendar-enhanced .react-calendar__tile--active {
+  @apply bg-blue-600 text-white;
+}
+
+.calendar-enhanced .react-calendar__tile--active:hover {
+  @apply bg-blue-700;
+}
+
+/* Calendar container animation */
+.calendar-container {
+  transition: transform 0.15s ease-in-out;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1280px) {
+  .calendar-enhanced .react-calendar__month-view__days__day {
+    @apply p-1 text-sm;
+  }
+}
+
+@media (max-width: 768px) {
+  .calendar-enhanced .react-calendar__month-view__days__day {
+    @apply p-1 text-xs;
+  }
+}
+
+/* Booking status colors */
+.booking-status-pending {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.booking-status-confirmed {
+  @apply bg-green-100 text-green-800;
+}
+
+.booking-status-cancelled {
+  @apply bg-red-100 text-red-800;
+}
+
+.booking-status-completed {
+  @apply bg-blue-100 text-blue-800;
+}
+
+/* Loading states */
+.skeleton {
+  @apply animate-pulse bg-gray-200 rounded;
+}
+
+.skeleton-text {
+  @apply h-4 bg-gray-200 rounded animate-pulse;
+}
+
+.skeleton-avatar {
+  @apply w-10 h-10 bg-gray-200 rounded-full animate-pulse;
+}
+
+/* Utility classes */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent;
+  }
+}

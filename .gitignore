@@ -1,0 +1,37 @@
+# Node
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# Next.js
+.next/
+out/
+
+# Env and secrets
+.env
+.env.*
+
+# Prisma
+classroomly/backend/prisma/dev.db
+
+# Build
+build/
+dist/
+
+# Misc
+*.swp
+*.swo
+.idea/

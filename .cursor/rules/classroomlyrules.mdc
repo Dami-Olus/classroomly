@@ -1,0 +1,317 @@
+---
+alwaysApply: true
+---
+
+```
+# TutorLink Project Rules for Cursor AI
+
+## Project Context
+This is a tutoring platform micro SaaS where tutors create shareable booking links and students can book sessions. The platform includes real-time chat, video calling, file sharing, and session management.
+
+## Tech Stack
+- Frontend: Next.js 14 with TypeScript and Tailwind CSS
+- Backend: Supabase (PostgreSQL + real-time + auth + storage)
+- Real-time: Supabase real-time subscriptions
+- Video: WebRTC or Twilio Video API
+- Payments: Stripe
+- Deployment: Vercel
+
+## Code Style and Standards
+
+### General Rules
+- Use TypeScript for all JavaScript code
+- Use functional components with hooks (no class components)
+- Use async/await instead of .then() for promises
+- Always include error handling and loading states
+- Use meaningful variable and function names
+- Add JSDoc comments for complex functions
+- Use consistent naming conventions (camelCase for variables, PascalCase for components)
+
+### React/Next.js Rules
+- Use Next.js 14 App Router (not Pages Router)
+- Components should be in separate files with PascalCase names
+- Use React.memo for components that receive props
+- Use useMemo and useCallback for expensive operations
+- Always handle loading and error states in components
+- Use proper TypeScript interfaces for props
+- Implement proper accessibility (ARIA labels, keyboard navigation)
+- Use Tailwind CSS for styling (no CSS modules or styled-components)
+
+### Database Rules
+- Use Supabase client for all database operations
+- Always use Row Level Security (RLS) policies
+- Use TypeScript types generated from Supabase schema
+- Handle database errors gracefully
+- Use transactions for multi-step operations
+- Include proper indexes for query performance
+
+### Security Rules
+- Never expose sensitive data in client-side code
+- Use Supabase RLS for data access control
+- Validate all user inputs on both client and server
+- Use environment variables for API keys and secrets
+- Implement proper authentication checks
+- Sanitize user-generated content
+
+### Performance Rules
+- Use React.Suspense for code splitting
+- Implement proper image optimization with Next.js Image component
+- Use Supabase real-time subscriptions efficiently
+- Implement proper caching strategies
+- Minimize bundle size with tree shaking
+- Use pagination for large data sets
+
+## Feature-Specific Rules
+
+### User Authentication
+- Use Supabase Auth for all authentication
+- Implement proper session management
+- Handle authentication state across the app
+- Use protected routes for authenticated content
+- Implement proper logout functionality
+
+### Booking System
+- Always check for booking conflicts before creating bookings
+- Use database transactions for booking operations
+- Implement proper timezone handling
+- Send confirmation emails for all bookings
+- Handle booking cancellations and refunds
+
+### Real-time Features
+- Use Supabase real-time subscriptions for chat and notifications
+- Implement proper connection management
+- Handle offline/online states
+- Use optimistic updates for better UX
+- Implement proper cleanup for subscriptions
+
+### Video Calling
+- Implement proper WebRTC connection handling
+- Include fallback options for connection failures
+- Handle different browser compatibility
+- Implement proper audio/video controls
+- Include screen sharing functionality
+
+### File Management
+- Use Supabase Storage for file uploads
+- Implement proper file type validation
+- Handle file size limits
+- Include virus scanning for uploaded files
+- Implement proper file access controls
+
+## Error Handling Rules
+- Always wrap async operations in try-catch blocks
+- Use custom error classes for different error types
+- Implement proper error logging
+- Show user-friendly error messages
+- Implement proper error boundaries in React
+- Handle network errors gracefully
+
+## Testing Rules
+- Write unit tests for utility functions
+- Write integration tests for API endpoints
+- Write component tests for React components
+- Use meaningful test descriptions
+- Mock external dependencies properly
+- Implement proper test data setup and teardown
+
+## API Design Rules
+- Use RESTful conventions for API endpoints
+- Implement proper HTTP status codes
+- Use consistent request/response formats
+- Include proper API documentation
+- Implement rate limiting for public endpoints
+- Use proper validation for all inputs
+
+## Code Organization Rules
+- Use consistent folder structure
+- Group related components together
+- Use index files for clean imports
+- Separate business logic from UI components
+- Use custom hooks for reusable logic
+- Keep components small and focused
+
+## UI/UX Rules
+- Use consistent design system with Tailwind
+- Implement responsive design for all components
+- Use proper loading states and skeletons
+- Implement proper form validation
+- Use consistent spacing and typography
+- Include proper focus management for accessibility
+
+## Performance Monitoring Rules
+- Implement proper analytics tracking
+- Monitor key performance metrics
+- Track user engagement and conversion rates
+- Implement proper error tracking
+- Monitor API response times
+- Track database query performance
+
+## Specific Component Guidelines
+
+### Forms
+- Use react-hook-form for form management
+- Implement proper validation with zod
+- Show inline error messages
+- Disable submit buttons during submission
+- Include proper loading states
+
+### Modals/Dialogs
+- Use headless UI components for accessibility
+- Implement proper focus management
+- Include proper close functionality
+- Use consistent modal styling
+- Handle escape key and backdrop clicks
+
+### Tables/Lists
+- Implement proper pagination
+- Include sorting and filtering options
+- Use virtual scrolling for large lists
+- Include proper loading states
+- Implement proper empty states
+
+### Navigation
+- Use Next.js Link component for navigation
+- Implement proper active states
+- Include breadcrumbs for deep navigation
+- Use consistent navigation patterns
+- Implement proper mobile navigation
+
+## Code Review Checklist
+Before generating code, ensure:
+- [ ] TypeScript interfaces are properly defined
+- [ ] Error handling is implemented
+- [ ] Loading states are included
+- [ ] Security best practices are followed
+- [ ] Performance optimizations are considered
+- [ ] Accessibility requirements are met
+- [ ] Code follows the established patterns
+- [ ] Tests are included where appropriate
+
+## Common Patterns to Follow
+
+### API Calls
+```typescript
+const { data, error, isLoading } = await supabase
+  .from('bookings')
+  .select('*')
+  .eq('tutor_id', tutorId);
+
+if (error) {
+  console.error('Error fetching bookings:', error);
+  throw new Error('Failed to fetch bookings');
+}
+```
+
+### Component Structure
+```typescript
+interface ComponentProps {
+  // Define props here
+}
+
+const Component: React.FC<ComponentProps> = ({ prop1, prop2 }) => {
+  // Hooks at the top
+  const [state, setState] = useState();
+  
+  // Effects
+  useEffect(() => {
+    // Effect logic
+  }, []);
+  
+  // Event handlers
+  const handleClick = useCallback(() => {
+    // Handler logic
+  }, []);
+  
+  // Render
+  return (
+    <div className="tailwind-classes">
+      {/* Component JSX */}
+    </div>
+  );
+};
+```
+
+### Error Boundaries
+```typescript
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <h1>Something went wrong.</h1>;
+    }
+
+    return this.props.children;
+  }
+}
+```
+
+## Questions to Ask Before Coding
+1. Does this component need to be reusable?
+2. What are the possible error states?
+3. How will this work on mobile devices?
+4. What are the accessibility requirements?
+5. How will this scale with more users?
+6. Are there any security considerations?
+7. What data needs to be validated?
+8. How will this integrate with existing components?
+
+## When to Break Rules
+- When performance requires optimization
+- When third-party library constraints exist
+- When user experience is significantly improved
+- When security requirements dictate different approach
+- Always document why rules are broken
+
+Remember: These rules are guidelines to ensure consistency and quality. Always consider the specific context and requirements of each feature.
+```
+
+### Step 3: Test Your Rules
+1. Save the `.cursorrules` file
+2. Open Cursor Chat (Cmd/Ctrl + L)
+3. Test with a prompt like:
+   ```
+   "Create a React component for displaying tutor availability. Follow the project rules."
+   ```
+4. Cursor should now generate code that follows your specified patterns
+
+### Step 4: Customize for Your Needs
+You can modify these rules based on your preferences:
+- Add specific libraries you want to use
+- Include your preferred folder structure
+- Add business logic specific to your platform
+- Include specific design patterns you prefer
+
+## Additional Tips
+
+### Rule Categories You Can Add:
+- **Git commit conventions**
+- **Documentation standards**
+- **Deployment procedures**
+- **Environment variable naming**
+- **Database migration patterns**
+
+### Make Rules Specific:
+```
+# Instead of: "Use good error handling"
+# Use: "Wrap all async operations in try-catch blocks and show user-friendly error messages using toast notifications"
+```
+
+### Update Rules as You Learn:
+- Add new patterns you discover
+- Update based on what works well
+- Remove rules that don't fit your workflow
+- Keep rules current with your tech stack
+
+This will dramatically improve the quality and consistency of code that Cursor generates for your project. The AI will now understand your specific requirements and generate code that matches your standards!
