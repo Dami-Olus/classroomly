@@ -5,20 +5,26 @@ import { supabase } from '../../lib/supabaseClient';
 
 interface VideoSessionProps {
   sessionId: string;
+  userId: string; // <-- Add this prop for sender_id
   userType: 'TUTOR' | 'STUDENT';
   onSessionEnd?: () => void;
 }
 
 interface ChatMessage {
   id: string;
-  sender: string;
-  message: string;
-  timestamp: Date;
+  sender_id: string;
+  content: string;
+  message_type: 'text' | 'file' | 'image' | 'system';
+  file_url?: string;
+  file_name?: string;
+  file_size?: number;
+  is_read: boolean;
+  created_at: string;
 }
 
 const SIGNAL_CHANNEL_PREFIX = 'video-session-';
 
-export default function VideoSession({ sessionId, userType, onSessionEnd }: VideoSessionProps) {
+export default function VideoSession({ sessionId, userId, userType, onSessionEnd }: VideoSessionProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +64,9 @@ export default function VideoSession({ sessionId, userType, onSessionEnd }: Vide
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const bubbleRef = useRef<HTMLDivElement>(null);
   const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // ICE candidate queueing for WebRTC
+  const pendingCandidatesRef = useRef<any[]>([]);
 
   // Set default position on mount (bottom-right, with margin)
   useEffect(() => {
@@ -221,13 +230,28 @@ export default function VideoSession({ sessionId, userType, onSessionEnd }: Vide
       if (!pc) return;
       if (type === 'offer') {
         await pc.setRemoteDescription(new RTCSessionDescription(data));
+        // Add any queued ICE candidates
+        for (const candidate of pendingCandidatesRef.current) {
+          try { await pc.addIceCandidate(candidate); } catch (e) { /* ignore */ }
+        }
+        pendingCandidatesRef.current = [];
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         signalChannel.send({ type: 'broadcast', event: 'signal', payload: { type: 'answer', data: answer } });
       } else if (type === 'answer') {
         await pc.setRemoteDescription(new RTCSessionDescription(data));
+        // Add any queued ICE candidates
+        for (const candidate of pendingCandidatesRef.current) {
+          try { await pc.addIceCandidate(candidate); } catch (e) { /* ignore */ }
+        }
+        pendingCandidatesRef.current = [];
       } else if (type === 'ice') {
-        await pc.addIceCandidate(new RTCIceCandidate(data));
+        const candidate = new RTCIceCandidate(data);
+        if (pc.remoteDescription && pc.remoteDescription.type) {
+          try { await pc.addIceCandidate(candidate); } catch (e) { /* ignore */ }
+        } else {
+          pendingCandidatesRef.current.push(candidate);
+        }
       }
     });
     await signalChannel.subscribe();
@@ -333,7 +357,7 @@ export default function VideoSession({ sessionId, userType, onSessionEnd }: Vide
         .from('messages')
         .select('*')
         .eq('session_id', sessionId)
-        .order('timestamp', { ascending: true });
+        .order('created_at', { ascending: true });
       if (data) setMessages(data);
     })();
     return () => {
@@ -347,14 +371,15 @@ export default function VideoSession({ sessionId, userType, onSessionEnd }: Vide
       await supabase.from('messages').insert([
         {
           session_id: sessionId,
-          sender: userType,
-          message: newMessage.trim(),
-          timestamp: new Date().toISOString(),
+          sender_id: userId,
+          content: newMessage.trim(),
+          message_type: 'text',
+          is_read: false
         },
       ]);
       setNewMessage('');
     }
-  }, [newMessage, userType, sessionId]);
+  }, [newMessage, userId, sessionId]);
   
   // Session management
   const endSession = useCallback(() => {
@@ -578,19 +603,19 @@ export default function VideoSession({ sessionId, userType, onSessionEnd }: Vide
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.sender === (userType === 'TUTOR' ? 'Tutor' : 'Student') ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.sender_id === userId ? 'justify-end' : 'justify-start'}`}
             >
               <div
                 className={`max-w-xs px-3 py-2 rounded-lg ${
-                  message.sender === (userType === 'TUTOR' ? 'Tutor' : 'Student')
+                  message.sender_id === userId
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-700 text-white'
                 }`}
               >
-                <div className="text-xs opacity-75 mb-1">{message.sender}</div>
-                <div>{message.message}</div>
+                <div className="text-xs opacity-75 mb-1">{message.sender_id}</div>
+                <div>{message.content}</div>
                 <div className="text-xs opacity-75 mt-1">
-                  {message.timestamp.toLocaleTimeString()}
+                  {new Date(message.created_at).toLocaleTimeString()}
                 </div>
               </div>
             </div>

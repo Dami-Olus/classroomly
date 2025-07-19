@@ -159,47 +159,74 @@ router.post('/',
 /**
  * GET /api/classes
  * Get all classes (with optional filtering)
+ * Students: only classes they are enrolled in or invited to
+ * Tutors: only their own classes
+ * Admins: all classes
  */
-router.get('/', async (req, res) => {
+router.get('/', authenticateUser, async (req, res) => {
   try {
     const { subject, level, tutorId, isActive } = req.query;
+    const user = req.user;
+    let classes = [];
 
-    // Build filter object
-    const where = {};
-    
-    if (subject) {
-      where.subject = { contains: subject, mode: 'insensitive' };
+    if (user.userType === 'STUDENT') {
+      // Find classes where the student is enrolled
+      const enrolledClassIds = await prisma.enrollment.findMany({
+        where: { studentId: user.id },
+        select: { classId: true }
+      });
+      // Find classes where the student has a valid invitation (booking link)
+      const invitedClassIds = await prisma.bookingLink.findMany({
+        where: { isActive: true }, // Optionally add more logic for user-specific invitations
+        select: { classId: true }
+      });
+      const classIds = [
+        ...new Set([
+          ...enrolledClassIds.map(e => e.classId),
+          ...invitedClassIds.map(i => i.classId)
+        ])
+      ];
+      // Build filter object
+      const where = { id: { in: classIds } };
+      if (subject) where.subject = { contains: subject, mode: 'insensitive' };
+      if (level) where.level = level;
+      if (tutorId) where.tutorId = tutorId;
+      if (isActive !== undefined) where.isActive = isActive === 'true';
+      classes = await prisma.class.findMany({
+        where,
+        include: {
+          tutor: { select: { id: true, firstName: true, lastName: true, email: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+    } else if (user.userType === 'TUTOR') {
+      // Show only classes created by this tutor
+      const where = { tutorId: user.id };
+      if (subject) where.subject = { contains: subject, mode: 'insensitive' };
+      if (level) where.level = level;
+      if (isActive !== undefined) where.isActive = isActive === 'true';
+      classes = await prisma.class.findMany({
+        where,
+        include: {
+          tutor: { select: { id: true, firstName: true, lastName: true, email: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+    } else {
+      // Admin or other roles: show all classes
+      const where = {};
+      if (subject) where.subject = { contains: subject, mode: 'insensitive' };
+      if (level) where.level = level;
+      if (tutorId) where.tutorId = tutorId;
+      if (isActive !== undefined) where.isActive = isActive === 'true';
+      classes = await prisma.class.findMany({
+        where,
+        include: {
+          tutor: { select: { id: true, firstName: true, lastName: true, email: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
     }
-    
-    if (level) {
-      where.level = level;
-    }
-    
-    if (tutorId) {
-      where.tutorId = tutorId;
-    }
-    
-    if (isActive !== undefined) {
-      where.isActive = isActive === 'true';
-    }
-
-    const classes = await prisma.class.findMany({
-      where,
-      include: {
-        tutor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
     return res.status(200).json({
       success: true,
       data: classes.map(cls => ({
@@ -207,10 +234,8 @@ router.get('/', async (req, res) => {
         pricePerSession: cls.pricePerSession
       }))
     });
-
   } catch (error) {
     console.error('Error fetching classes:', error);
-    
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch classes'

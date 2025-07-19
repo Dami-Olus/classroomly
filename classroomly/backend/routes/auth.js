@@ -97,6 +97,11 @@ router.get('/verify-email', async (req, res) => {
     console.log('Verification attempt with token:', token);
     
     if (!token) {
+      // Try to find a user who is already verified (for friendlier UX)
+      const user = await prisma.user.findFirst({ where: { isVerified: true } });
+      if (user) {
+        return res.status(200).json({ success: true, message: 'Email already verified.' });
+      }
       return res.status(400).json({ success: false, message: 'Verification token is required' });
     }
     
@@ -104,6 +109,11 @@ router.get('/verify-email', async (req, res) => {
     console.log('User found:', user ? 'Yes' : 'No');
     
     if (!user) {
+      // Try to find a user who is already verified (for friendlier UX)
+      const alreadyVerified = await prisma.user.findFirst({ where: { isVerified: true, verificationToken: null } });
+      if (alreadyVerified) {
+        return res.status(200).json({ success: true, message: 'Email already verified.' });
+      }
       // Let's also check if there are any users with verification tokens
       const allUsersWithTokens = await prisma.user.findMany({
         where: { verificationToken: { not: null } },

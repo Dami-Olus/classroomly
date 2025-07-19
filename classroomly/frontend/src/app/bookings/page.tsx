@@ -190,6 +190,17 @@ export default function BookingsPage() {
       if (fetchSessionRes.ok) {
         const sessionResult = await fetchSessionRes.json();
         if (sessionResult.data && sessionResult.data.id) {
+          // If session is completed or cancelled, restart it first
+          if (sessionResult.data.status === 'COMPLETED' || sessionResult.data.status === 'CANCELLED') {
+            const restartRes = await fetch(`http://localhost:4000/api/sessions/${sessionResult.data.id}/restart`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!restartRes.ok) {
+              const result = await restartRes.json();
+              throw new Error(result.message || 'Failed to restart session');
+            }
+          }
           window.location.href = `/session/${sessionResult.data.id}`;
           setUpdatingStatus(null);
           return;
@@ -249,6 +260,17 @@ export default function BookingsPage() {
       if (fetchSessionRes.ok) {
         const sessionResult = await fetchSessionRes.json();
         if (sessionResult.data && sessionResult.data.id) {
+          // If session is completed or cancelled, restart it first
+          if (sessionResult.data.status === 'COMPLETED' || sessionResult.data.status === 'CANCELLED') {
+            const restartRes = await fetch(`http://localhost:4000/api/sessions/${sessionResult.data.id}/restart`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!restartRes.ok) {
+              const result = await restartRes.json();
+              throw new Error(result.message || 'Failed to restart session');
+            }
+          }
           window.location.href = `/session/${sessionResult.data.id}`;
           setUpdatingStatus(null);
           return;

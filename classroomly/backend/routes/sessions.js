@@ -264,6 +264,59 @@ router.post('/:id/end', authenticateToken, async (req, res) => {
   }
 });
 
+// Restart session (tutor or student)
+router.post('/:id/restart', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user } = req;
+
+    const session = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        booking: {
+          include: {
+            class: true,
+            student: true
+          }
+        }
+      }
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found' });
+    }
+
+    // Check if the user is the tutor or student for this session
+    const isAuthorized =
+      (user.userType === 'TUTOR' && session.booking.class.tutorId === user.id) ||
+      (user.userType === 'STUDENT' && session.booking.studentId === user.id);
+
+    if (!isAuthorized) {
+      return res.status(403).json({ message: 'You are not authorized to restart this session' });
+    }
+
+    // Only allow restart if session is completed or cancelled
+    if (session.status !== 'COMPLETED' && session.status !== 'CANCELLED') {
+      return res.status(400).json({ message: 'Session can only be restarted if it is completed or cancelled' });
+    }
+
+    // Update session status to IN_PROGRESS and clear endedAt
+    const updatedSession = await prisma.session.update({
+      where: { id },
+      data: {
+        status: 'IN_PROGRESS',
+        endedAt: null,
+        startedAt: new Date()
+      }
+    });
+
+    res.json({ message: 'Session restarted successfully', data: updatedSession });
+  } catch (error) {
+    console.error('Error restarting session:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Get user's sessions (upcoming and past)
 router.get('/user/sessions', authenticateToken, async (req, res) => {
   try {

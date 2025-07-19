@@ -83,7 +83,12 @@ export default function ClassesPage() {
         params.append('tutorId', filters.tutorId);
       }
 
-      const response = await fetch(`http://localhost:4000/api/classes?${params}`);
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`http://localhost:4000/api/classes?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const result = await response.json();
 
       if (response.ok) {

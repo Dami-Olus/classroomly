@@ -34,6 +34,7 @@ model User {
   // Relations
   classesCreated    Class[]
   bookingsAsStudent Booking[] @relation("StudentBookings")
+  bookingsAsTutor   Booking[] @relation("TutorBookings")
   sessionsAsTutor   Session[] @relation("TutorSessions")
   sessionsAsStudent Session[] @relation("StudentSessions")
   messagesSent      Message[] @relation("SentMessages")
@@ -77,11 +78,12 @@ model Booking {
   id              String        @id @default(uuid())
   studentId       String        @map("student_id")
   classId         String        @map("class_id")
+  tutorId         String        @map("tutor_id") // <-- Added for permission checks
   scheduledAt     DateTime      @map("scheduled_at")
   status          BookingStatus @default(PENDING)
   paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
   paymentIntentId String?       @map("payment_intent_id")
-  totalAmount     Float       @map("total_amount")
+  totalAmount     Float         @map("total_amount")
   notes           String?
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
@@ -89,6 +91,7 @@ model Booking {
   // Relations
   student  User      @relation("StudentBookings", fields: [studentId], references: [id], onDelete: Cascade)
   class    Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  tutor    User      @relation("TutorBookings", fields: [tutorId], references: [id], onDelete: Cascade) // <-- Added relation
   sessions Session[]
   rescheduleRequests RescheduleRequest[]
 

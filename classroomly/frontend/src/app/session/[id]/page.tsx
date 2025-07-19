@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast';
 import { addDays, format, isBefore, isEqual, isAfter, set, getDay, parseISO } from 'date-fns';
 import { getAvailableStartTimes } from '@/components/tutor/getAvailableStartTimes';
 import { Slot, Booking } from '@/components/tutor/TutorBookingCalendar';
+import ChatInterface from '@/components/chat/ChatInterface';
 
 interface SessionData {
   id: string;
@@ -39,145 +40,6 @@ interface User {
   userType: 'TUTOR' | 'STUDENT';
   firstName: string;
   lastName: string;
-}
-
-function ChatPanel({ sessionId, classId, user }: { sessionId: string, classId: string, user: any }) {
-  const [messages, setMessages] = useState<any[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // Fetch messages on mount
-  useEffect(() => {
-    let subscription: any;
-    const fetchMessages = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const token = localStorage.getItem('authToken');
-        const res = await fetch(`http://localhost:4000/api/messages?sessionId=${sessionId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (res.ok) setMessages(data.data);
-        else setError(data.message || 'Failed to fetch messages');
-      } catch (err) {
-        setError('Failed to fetch messages');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMessages();
-    // Subscribe to realtime updates
-    subscription = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `session_id=eq.${sessionId}`
-        },
-        (payload) => {
-          setMessages((prev) => {
-            // Avoid duplicates
-            if (prev.some((m) => m.id === payload.new.id)) return prev;
-            return [...prev, payload.new];
-          });
-        }
-      )
-      .subscribe();
-    return () => {
-      if (subscription) supabase.removeChannel(subscription);
-    };
-  }, [sessionId]);
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Send message
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-    setSending(true);
-    try {
-      const token = localStorage.getItem('authToken');
-      const res = await fetch('http://localhost:4000/api/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ sessionId, classId, message: newMessage.trim() })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setMessages((prev) => [...prev, data.data]);
-        setNewMessage('');
-      } else {
-        setError(data.message || 'Failed to send message');
-      }
-    } catch (err) {
-      setError('Failed to send message');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="font-semibold text-lg mb-2">Chat</div>
-      <div className="flex-1 bg-white rounded-lg shadow-inner p-2 mb-2 overflow-y-auto">
-        {loading ? (
-          <div className="text-gray-400 text-center py-8">Loading chat...</div>
-        ) : error ? (
-          <div className="text-red-500 text-center py-8">{error}</div>
-        ) : messages.length === 0 ? (
-          <div className="text-gray-400 text-center py-8">No messages yet.</div>
-        ) : (
-          <div className="space-y-2">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.senderId === user.id ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-xs px-4 py-2 rounded-lg shadow text-sm ${
-                  msg.senderId === user.id
-                    ? 'bg-blue-600 text-white rounded-br-none'
-                    : 'bg-gray-100 text-gray-900 rounded-bl-none'
-                }`}>
-                  <div className="font-semibold mb-1">
-                    {msg.senderType === 'TUTOR' ? 'Tutor' : 'Student'}
-                    <span className="ml-2 text-xs text-gray-400">{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  <div>{msg.message}</div>
-                </div>
-              </div>
-            ))}
-            <div ref={chatEndRef} />
-          </div>
-        )}
-      </div>
-      <form onSubmit={sendMessage} className="flex gap-2">
-        <input
-          className="flex-1 border rounded px-3 py-2"
-          placeholder="Type a message..."
-          value={newMessage}
-          onChange={e => setNewMessage(e.target.value)}
-          disabled={sending}
-        />
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
-          disabled={sending || !newMessage.trim()}
-        >
-          Send
-        </button>
-      </form>
-    </div>
-  );
 }
 
 function MaterialsPanel({ sessionId, classId, user }: { sessionId: string, classId: string, user: any }) {
@@ -884,7 +746,12 @@ export default function SessionPage() {
           {/* Video Area */}
           <div className="md:w-2/3 w-full mb-4 md:mb-0">
             {session && user && (
-              <VideoSession sessionId={session.id} userType={user.userType} onSessionEnd={handleSessionEnd} />
+              <VideoSession
+                sessionId={session.id}
+                userId={user.id}
+                userType={user.userType}
+                onSessionEnd={handleSessionEnd}
+              />
             )}
           </div>
           {/* Tabs for Chat/Materials */}
@@ -905,7 +772,12 @@ export default function SessionPage() {
             </div>
             <div className="flex-1 overflow-y-auto bg-gray-50 rounded-lg shadow p-2">
               {activeTab === 'chat' ? (
-                <ChatPanel sessionId={session?.id} classId={session?.classId} user={user} />
+                <ChatInterface
+                  sessionId={session?.id}
+                  currentUserId={user?.id}
+                  currentUserName={`${user?.firstName} ${user?.lastName}`}
+                  isVideoSession={true}
+                />
               ) : (
                 <MaterialsPanel sessionId={session?.id} classId={session?.classId} user={user} />
               )}

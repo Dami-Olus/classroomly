@@ -218,6 +218,7 @@ router.post('/link/:token', async (req, res) => {
       data: {
         classId: bookingLink.classId,
         studentId: student.id,
+        tutorId: bookingLink.class.tutorId, // <-- Add this line
         scheduledAt: scheduledDate,
         notes: notes || '',
         status: BookingStatus.PENDING,
@@ -341,6 +342,7 @@ router.post('/schedule', authenticateUser, async (req, res) => {
       data: {
         classId,
         studentId: student.id,
+        tutorId: classData.tutorId, // <-- Add this line
         scheduledAt: scheduledDate,
         notes: notes || '',
         status: BookingStatus.CONFIRMED, // Auto-confirm when tutor schedules
@@ -477,7 +479,10 @@ router.get('/', authenticateUser, async (req, res) => {
       });
     }
 
-    res.json({ data: bookings });
+    res.json({ data: bookings.map(b => ({
+      ...b,
+      tutorId: b.class?.tutor?.id // flatten for frontend use
+    })) });
   } catch (error) {
     console.error('Error fetching bookings:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -683,6 +688,7 @@ router.post('/', authenticateUser, async (req, res) => {
       data: {
         classId,
         studentId: userId,
+        tutorId: classData.tutorId, // <-- Set tutorId for permission checks
         scheduledAt: scheduledDate,
         notes: notes || '',
         status: BookingStatus.PENDING,
