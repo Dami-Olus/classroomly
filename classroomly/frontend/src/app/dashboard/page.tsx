@@ -8,7 +8,7 @@ interface User {
   email: string;
   firstName: string;
   lastName: string;
-  userType: 'TUTOR' | 'STUDENT';
+  userType: 'tutor' | 'student';
   bio?: string;
   subjects?: string;
   hourlyRate?: number;
@@ -160,7 +160,7 @@ export default function DashboardPage() {
         
         const userType = userData?.userType;
         
-        if (userType === 'TUTOR') {
+        if (userType === 'tutor') {
           const myClasses = classes;
           const myBookings = bookings.filter((booking: any) => booking.class.tutor?.id === userData?.id);
           const pendingBookings = myBookings.filter((booking: any) => booking.status === 'PENDING');
@@ -365,7 +365,7 @@ export default function DashboardPage() {
             Welcome back, {user.firstName}!
           </h1>
           <p className="text-gray-600">
-            Here's what's happening with your {user.userType === 'TUTOR' ? 'tutoring' : 'learning'} today.
+            Here's what's happening with your {user.userType === 'tutor' ? 'tutoring' : 'learning'} today.
           </p>
           {lastUpdated && (
             <p className="text-sm text-gray-500 mt-2">
@@ -377,7 +377,7 @@ export default function DashboardPage() {
         {/* Dashboard Content */}
         <div className="space-y-8">
           {/* Stats Cards */}
-          {user.userType === 'TUTOR' ? (
+          {user.userType === 'tutor' ? (
             <TutorDashboard user={user} stats={stats} statsLoading={statsLoading} />
           ) : (
             <StudentDashboard user={user} stats={stats} statsLoading={statsLoading} />
@@ -479,7 +479,7 @@ export default function DashboardPage() {
                             {start.toLocaleDateString()} at {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                           <p className="text-sm text-gray-500">
-                            {user.userType === 'TUTOR' ? 'Student' : 'Tutor'}: {otherParty}
+                            {user.userType === 'tutor' ? 'Student' : 'Tutor'}: {otherParty}
                           </p>
                           <span className={`badge ${session.status === 'CONFIRMED' ? 'badge-success' : 'badge-warning'}`}>
                             {session.status}

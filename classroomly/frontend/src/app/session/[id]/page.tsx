@@ -44,29 +44,23 @@ interface User {
 
 function MaterialsPanel({ sessionId, classId, user }: { sessionId: string, classId: string, user: any }) {
   const [materials, setMaterials] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [tag, setTag] = useState('classwork');
-  const [description, setDescription] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [description, setDescription] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const TAG_OPTIONS = [
-    { value: 'classwork', label: 'Classwork', color: 'bg-blue-100 text-blue-800' },
-    { value: 'assignment', label: 'Assignment', color: 'bg-green-100 text-green-800' },
-    { value: 'practice', label: 'Practice', color: 'bg-yellow-100 text-yellow-800' },
-    { value: 'test', label: 'Test', color: 'bg-red-100 text-red-800' },
-  ];
   const MAX_SIZE_MB = 10;
   const ALLOWED_TYPES = [
     'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'image/png',
-    'image/jpeg',
     'image/jpg',
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -168,10 +162,12 @@ function MaterialsPanel({ sessionId, classId, user }: { sessionId: string, class
         body: JSON.stringify({
           sessionId,
           classId,
-          url: fileUrl,
-          name: file.name,
-          tag,
-          description,
+          fileUrl: fileUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type,
+          title: file.name,
+          description: description || null,
         })
       });
       const data = await res.json();
@@ -200,16 +196,6 @@ function MaterialsPanel({ sessionId, classId, user }: { sessionId: string, class
           aria-label="Select file to upload"
         />
         <div className="flex gap-2">
-          <select
-            value={tag}
-            onChange={e => setTag(e.target.value)}
-            className="rounded border px-2 py-1 text-sm"
-            aria-label="Material tag"
-          >
-            {TAG_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
           <input
             type="text"
             value={description}
@@ -240,14 +226,17 @@ function MaterialsPanel({ sessionId, classId, user }: { sessionId: string, class
         ) : (
           <div className="space-y-3">
             {materials.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((mat) => {
-              const tagObj = TAG_OPTIONS.find(t => t.value === mat.tag) || TAG_OPTIONS[0];
               return (
                 <div key={mat.id} className="flex items-center gap-3 p-2 rounded border hover:bg-gray-50">
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${tagObj.color}`}>{tagObj.label}</span>
-                  <a href={mat.url} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline break-all max-w-xs" download>{mat.name}</a>
+                  <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                    {mat.fileType?.split('/')[1]?.toUpperCase() || 'FILE'}
+                  </span>
+                  <a href={mat.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline break-all max-w-xs" download>
+                    {mat.title || mat.fileName}
+                  </a>
                   {mat.description && <span className="text-gray-500 text-xs ml-2">{mat.description}</span>}
                   <span className="ml-auto text-xs text-gray-400">{new Date(mat.createdAt).toLocaleString()}</span>
-                  <span className="text-xs text-gray-500 ml-2">by {mat.uploaderType === 'TUTOR' ? 'Tutor' : 'Student'}</span>
+                  <span className="text-xs text-gray-500 ml-2">by Tutor</span>
                 </div>
               );
             })}

@@ -1,39 +1,23 @@
 const express = require('express');
 const { z } = require('zod');
-const prisma = require('../lib/prisma');
-const { validateBody } = require('../middleware/validation');
+const supabase = require('../lib/supabase');
 const { authenticateUser, requireTutor } = require('../middleware/auth');
+const { validateBody } = require('../middleware/validation');
 
 const router = express.Router();
 
 // Validation schema for creating a new class
 const createClassSchema = z.object({
-  title: z.string()
-    .min(1, 'Title is required')
-    .max(255, 'Title must be less than 255 characters'),
-  description: z.string()
-    .max(1000, 'Description must be less than 1000 characters')
-    .optional(),
-  subject: z.string()
-    .min(1, 'Subject is required')
-    .max(100, 'Subject must be less than 100 characters'),
-  level: z.enum(['beginner', 'intermediate', 'advanced'])
-    .optional(),
-  maxStudents: z.number()
-    .int()
-    .min(1, 'Maximum students must be at least 1')
-    .max(50, 'Maximum students cannot exceed 50')
-    .default(1),
-  durationMinutes: z.number()
-    .int()
-    .min(15, 'Duration must be at least 15 minutes')
-    .max(480, 'Duration cannot exceed 8 hours (480 minutes)'),
-  pricePerSession: z.number()
-    .positive('Price must be positive')
-    .max(1000, 'Price cannot exceed $1000 per session')
+  title: z.string().min(1).max(255),
+  description: z.string().max(1000).optional(),
+  subject: z.string().min(1).max(100),
+  level: z.enum(['beginner', 'intermediate', 'advanced']).optional(),
+  maxStudents: z.number().int().min(1).max(50).default(1),
+  durationMinutes: z.number().int().min(15).max(480),
+  pricePerSession: z.number().positive().max(1000).optional()
 });
 
-// Add updateClassSchema for updates (all fields optional)
+// Update schema (all fields optional)
 const updateClassSchema = z.object({
   title: z.string().min(1).max(255).optional(),
   description: z.string().max(1000).optional(),
@@ -47,383 +31,165 @@ const updateClassSchema = z.object({
 
 /**
  * POST /api/classes
- * Create a new tutoring class
- * Requires: Authentication, Tutor role
+ * Create a new class (tutor only)
  */
-router.post('/', 
-  authenticateUser, 
-  requireTutor, 
+router.post(
+  '/',
+  authenticateUser,
+  requireTutor,
   validateBody(createClassSchema),
   async (req, res) => {
     try {
-      const {
-        title,
-        description,
-        subject,
-        level,
-        maxStudents,
-        durationMinutes,
-        pricePerSession
-      } = req.validatedBody;
-
+      const { title, description, subject, level, maxStudents, durationMinutes, pricePerSession } = req.validatedBody;
       const tutorId = req.user.id;
 
-      // Create the new class
-      const newClass = await prisma.class.create({
-        data: {
-          tutorId,
+      const { data: newClass, error } = await supabase
+        .from('classes')
+        .insert([{
+          tutor_id: tutorId,
           title,
           description,
           subject,
           level,
-          maxStudents,
-          durationMinutes,
-          pricePerSession: pricePerSession !== undefined ? pricePerSession : 0,
-          isActive: true
-        },
-        include: {
-          tutor: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true
-            }
-          }
-        }
-      });
+          max_students: maxStudents,
+          duration_minutes: durationMinutes,
+          price_per_session: pricePerSession ?? 0,
+          is_active: true
+        }])
+        .select('*')
+        .single();
 
-      // Return success response
+      if (error) throw error;
+
       return res.status(201).json({
         success: true,
         message: 'Class created successfully',
-        data: {
-          id: newClass.id,
-          title: newClass.title,
-          description: newClass.description,
-          subject: newClass.subject,
-          level: newClass.level,
-          maxStudents: newClass.maxStudents,
-          durationMinutes: newClass.durationMinutes,
-          pricePerSession: newClass.pricePerSession,
-          isActive: newClass.isActive,
-          createdAt: newClass.createdAt,
-          tutor: newClass.tutor
-        }
+        data: newClass
       });
 
     } catch (error) {
       console.error('Error creating class:', error);
-
-      // Handle Prisma-specific errors
-      if (error.code === 'P2002') {
-        return res.status(409).json({
-          success: false,
-          message: 'A class with this title already exists'
-        });
-      }
-
-      if (error.code === 'P2003') {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid tutor reference'
-        });
-      }
-
-      // Handle validation errors
-      if (error.name === 'PrismaClientValidationError') {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid data provided',
-          errors: error.message
-        });
-      }
-
-      // Handle database connection errors
-      if (error.code === 'P1001' || error.code === 'P1008') {
-        return res.status(503).json({
-          success: false,
-          message: 'Database connection error. Please try again later.'
-        });
-      }
-
-      // Generic error response
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to create class. Please try again later.'
-      });
+      return res.status(500).json({ success: false, message: 'Failed to create class' });
     }
   }
 );
 
 /**
  * GET /api/classes
- * Get all classes (with optional filtering)
- * Students: only classes they are enrolled in or invited to
- * Tutors: only their own classes
- * Admins: all classes
+ * Get classes (students: enrolled/invited, tutors: own, admins: all)
  */
 router.get('/', authenticateUser, async (req, res) => {
   try {
     const { subject, level, tutorId, isActive } = req.query;
     const user = req.user;
-    let classes = [];
+
+    let query = supabase.from('classes').select('*');
 
     if (user.userType === 'STUDENT') {
-      // Find classes where the student is enrolled
-      const enrolledClassIds = await prisma.enrollment.findMany({
-        where: { studentId: user.id },
-        select: { classId: true }
-      });
-      // Find classes where the student has a valid invitation (booking link)
-      const invitedClassIds = await prisma.bookingLink.findMany({
-        where: { isActive: true }, // Optionally add more logic for user-specific invitations
-        select: { classId: true }
-      });
-      const classIds = [
-        ...new Set([
-          ...enrolledClassIds.map(e => e.classId),
-          ...invitedClassIds.map(i => i.classId)
-        ])
-      ];
-      // Build filter object
-      const where = { id: { in: classIds } };
-      if (subject) where.subject = { contains: subject, mode: 'insensitive' };
-      if (level) where.level = level;
-      if (tutorId) where.tutorId = tutorId;
-      if (isActive !== undefined) where.isActive = isActive === 'true';
-      classes = await prisma.class.findMany({
-        where,
-        include: {
-          tutor: { select: { id: true, firstName: true, lastName: true, email: true } }
-        },
-        orderBy: { createdAt: 'desc' }
-      });
+      // TODO: Add enrollment / invitation logic if you have those tables
+      query = query.eq('is_active', true); // basic filter for now
     } else if (user.userType === 'TUTOR') {
-      // Show only classes created by this tutor
-      const where = { tutorId: user.id };
-      if (subject) where.subject = { contains: subject, mode: 'insensitive' };
-      if (level) where.level = level;
-      if (isActive !== undefined) where.isActive = isActive === 'true';
-      classes = await prisma.class.findMany({
-        where,
-        include: {
-          tutor: { select: { id: true, firstName: true, lastName: true, email: true } }
-        },
-        orderBy: { createdAt: 'desc' }
-      });
-    } else {
-      // Admin or other roles: show all classes
-      const where = {};
-      if (subject) where.subject = { contains: subject, mode: 'insensitive' };
-      if (level) where.level = level;
-      if (tutorId) where.tutorId = tutorId;
-      if (isActive !== undefined) where.isActive = isActive === 'true';
-      classes = await prisma.class.findMany({
-        where,
-        include: {
-          tutor: { select: { id: true, firstName: true, lastName: true, email: true } }
-        },
-        orderBy: { createdAt: 'desc' }
-      });
-    }
-    return res.status(200).json({
-      success: true,
-      data: classes.map(cls => ({
-        ...cls,
-        pricePerSession: cls.pricePerSession
-      }))
-    });
+      query = query.eq('tutor_id', user.id);
+    } // admins: no tutor filter
+
+    if (subject) query = query.ilike('subject', `%${subject}%`);
+    if (level) query = query.eq('level', level);
+    if (tutorId) query = query.eq('tutor_id', tutorId);
+    if (isActive !== undefined) query = query.eq('is_active', isActive === 'true');
+
+    const { data: classes, error } = await query.order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return res.status(200).json({ success: true, data: classes });
   } catch (error) {
     console.error('Error fetching classes:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch classes'
-    });
+    return res.status(500).json({ success: false, message: 'Failed to fetch classes' });
   }
 });
 
 /**
  * GET /api/classes/:id
- * Get a specific class by ID
+ * Get class by ID
  */
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const { data: classData, error } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    const classData = await prisma.class.findUnique({
-      where: { id },
-      include: {
-        tutor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            bio: true,
-            subjects: true,
-            hourlyRate: true
-          }
-        }
-      }
-    });
+    if (error) return res.status(404).json({ success: false, message: 'Class not found' });
 
-    if (!classData) {
-      return res.status(404).json({
-        success: false,
-        message: 'Class not found'
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        ...classData,
-        pricePerSession: parseFloat(classData.pricePerSession),
-        tutor: {
-          ...classData.tutor,
-          hourlyRate: classData.tutor.hourlyRate ? parseFloat(classData.tutor.hourlyRate) : null
-        }
-      }
-    });
-
+    return res.status(200).json({ success: true, data: classData });
   } catch (error) {
     console.error('Error fetching class:', error);
-    
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch class'
-    });
+    return res.status(500).json({ success: false, message: 'Failed to fetch class' });
   }
 });
 
 /**
  * PUT /api/classes/:id
- * Update a class (tutor who owns the class only)
+ * Update a class (tutor who owns it)
  */
-router.put('/:id', authenticateUser, validateBody(updateClassSchema), async (req, res) => {
+router.put('/:id', authenticateUser, requireTutor, validateBody(updateClassSchema), async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, subject, level, maxStudents, durationMinutes, pricePerSession, isActive } = req.validatedBody;
-    const userId = req.user.id;
+    const updateData = req.validatedBody;
 
-    // Check if class exists and user owns it
-    const existingClass = await prisma.class.findUnique({
-      where: { id }
-    });
+    // Check ownership
+    const { data: existingClass, error: findError } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (!existingClass) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Class not found' 
-      });
-    }
+    if (findError || !existingClass) return res.status(404).json({ success: false, message: 'Class not found' });
+    if (existingClass.tutor_id !== req.user.id) return res.status(403).json({ success: false, message: 'You can only edit your own classes' });
 
-    if (existingClass.tutorId !== userId) {
-      return res.status(403).json({ 
-        success: false,
-        message: 'You can only edit your own classes' 
-      });
-    }
+    const { data: updatedClass, error: updateError } = await supabase
+      .from('classes')
+      .update(updateData)
+      .eq('id', id)
+      .select('*')
+      .single();
 
-    // Default missing fields to existing values
-    const updateData = {
-      title: title !== undefined ? title : existingClass.title,
-      description: description !== undefined ? description : existingClass.description,
-      subject: subject !== undefined ? subject : existingClass.subject,
-      level: level !== undefined ? level : existingClass.level,
-      maxStudents: maxStudents !== undefined ? parseInt(maxStudents) : existingClass.maxStudents,
-      durationMinutes: durationMinutes !== undefined ? parseInt(durationMinutes) : existingClass.durationMinutes,
-      pricePerSession: pricePerSession !== undefined ? parseFloat(pricePerSession) : existingClass.pricePerSession,
-      isActive: isActive !== undefined ? isActive : existingClass.isActive
-    };
+    if (updateError) throw updateError;
 
-    // Validate required fields
-    if (!updateData.title || !updateData.subject || isNaN(updateData.maxStudents) || isNaN(updateData.durationMinutes) || isNaN(updateData.pricePerSession)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or missing required fields'
-      });
-    }
-
-    const updatedClass = await prisma.class.update({
-      where: { id },
-      data: updateData,
-      include: {
-        tutor: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    });
-
-    return res.status(200).json({
-      success: true,
-      data: updatedClass
-    });
+    return res.status(200).json({ success: true, data: updatedClass });
   } catch (error) {
     console.error('Error updating class:', error);
-    if (error.name === 'PrismaClientValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid data provided',
-        errors: error.message
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Failed to update class' });
   }
 });
 
 /**
  * DELETE /api/classes/:id
- * Delete a class (tutor who owns the class only)
+ * Delete a class (tutor who owns it)
  */
-router.delete('/:id', authenticateUser, async (req, res) => {
+router.delete('/:id', authenticateUser, requireTutor, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.id;
 
-    // Check if class exists and user owns it
-    const existingClass = await prisma.class.findUnique({
-      where: { id }
-    });
+    const { data: existingClass, error: findError } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (!existingClass) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Class not found' 
-      });
-    }
+    if (findError || !existingClass) return res.status(404).json({ success: false, message: 'Class not found' });
+    if (existingClass.tutor_id !== req.user.id) return res.status(403).json({ success: false, message: 'You can only delete your own classes' });
 
-    if (existingClass.tutorId !== userId) {
-      return res.status(403).json({ 
-        success: false,
-        message: 'You can only delete your own classes' 
-      });
-    }
+    const { error: deleteError } = await supabase.from('classes').delete().eq('id', id);
+    if (deleteError) throw deleteError;
 
-    await prisma.class.delete({
-      where: { id }
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: 'Class deleted successfully'
-    });
+    return res.status(200).json({ success: true, message: 'Class deleted successfully' });
   } catch (error) {
     console.error('Error deleting class:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
+    return res.status(500).json({ success: false, message: 'Failed to delete class' });
   }
 });
 
-module.exports = router; 
+module.exports = router;

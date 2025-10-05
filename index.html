@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClassroomLY - All-in-One Online Tutoring Platform</title>
+    <meta name="description" content="Stop juggling Calendly + Zoom + Venmo. ClassroomLY gives independent tutors one link for everything: booking, video classroom, and payments.">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Custom Tailwind Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#dcdc21',
+                        secondary: '#1fa5b5'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #dcdc21 0%, #1fa5b5 100%);
+        }
+        
+        .hero-pattern {
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+        
+        .floating {
+            animation: floating 3s ease-in-out infinite;
+        }
+        
+        @keyframes floating {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .pulse-glow {
+            animation: pulse-glow 2s infinite;
+        }
+        
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(220, 220, 33, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(220, 220, 33, 0.6); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <div class="w-8 h-8 bg-gradient-to-r from-primary to-secondary rounded-lg flex items-center justify-center">
+                        <span class="text-white font-bold text-sm">C</span>
+                    </div>
+                    <span class="ml-2 text-xl font-bold text-gray-900">ClassroomLY</span>
+                </div>
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#features" class="text-gray-600 hover:text-primary transition-colors">Features</a>
+                    <a href="#pricing" class="text-gray-600 hover:text-primary transition-colors">Pricing</a>
+                    <a href="#demo" class="text-gray-600 hover:text-primary transition-colors">Demo</a>
+                </div>
+                <div class="flex items-center">
+                    <button onclick="scrollToWaitlist()" class="bg-primary text-white px-6 py-2 rounded-lg font-medium hover:bg-yellow-400 transition-colors">
+                        Join Waitlist
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="gradient-bg hero-pattern py-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center">
+                <h1 class="text-4xl md:text-6xl font-bold text-white mb-6">
+                    Stop Juggling<br>
+                    <span class="text-yellow-200">Calendly + Zoom + Venmo</span>
+                </h1>
+                <p class="text-xl md:text-2xl text-white/90 mb-8 max-w-3xl mx-auto">
+                    ClassroomLY gives independent tutors <strong>one link for everything</strong>: 
+                    booking, video classroom, and payments. Launching Q2 2026.
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                    <button onclick="scrollToWaitlist()" class="bg-white text-primary px-8 py-4 rounded-lg font-semibold text-lg hover:bg-gray-100 transition-colors pulse-glow">
+                        Join Waitlist - Free for 3 Months
+                    </button>
+                    <button onclick="scrollToDemo()" class="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-white hover:text-primary transition-colors">
+                        See Demo
+                    </button>
+                </div>
+                <p class="text-white/70 mt-4 text-sm">
+                    🎉 First 100 tutors get lifetime access to Pro features
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Problem Section -->
+    <section class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                    The Problem Every Tutor Faces
+                </h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    You're paying for multiple tools, switching between apps, and losing students to friction.
+                </p>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="text-center p-6 border border-red-200 rounded-lg bg-red-50">
+                    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-calendar-times text-red-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Calendly ($10/month)</h3>
+                    <p class="text-gray-600">Booking only. Students still need Zoom link separately.</p>
+                </div>
+                
+                <div class="text-center p-6 border border-blue-200 rounded-lg bg-blue-50">
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-video text-blue-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Zoom ($15/month)</h3>
+                    <p class="text-gray-600">Video only. No booking integration or payment collection.</p>
+                </div>
+                
+                <div class="text-center p-6 border border-green-200 rounded-lg bg-green-50">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-credit-card text-green-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Manual Payments</h3>
+                    <p class="text-gray-600">Venmo/Interac. Chasing payments, no automatic collection.</p>
+                </div>
+            </div>
+            
+            <div class="text-center mt-12">
+                <div class="inline-flex items-center bg-gray-100 px-6 py-3 rounded-lg">
+                    <span class="text-2xl font-bold text-gray-900 mr-2">Total: $25/month</span>
+                    <span class="text-gray-600">+ manual work + student confusion</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Solution Section -->
+    <section id="features" class="py-20 bg-gray-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                    One Link. Everything Included.
+                </h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    ClassroomLY replaces your entire tutoring tech stack with one integrated platform.
+                </p>
+            </div>
+            
+            <div class="grid lg:grid-cols-2 gap-12 items-center">
+                <div>
+                    <div class="space-y-8">
+                        <div class="flex items-start space-x-4">
+                            <div class="w-12 h-12 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-link text-white text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-semibold text-gray-900 mb-2">Shareable Booking Link</h3>
+                                <p class="text-gray-600">One link: classroomly.com/tutor/johnsmith. Students book, pay, and join - no confusion.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-4">
+                            <div class="w-12 h-12 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-video text-white text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-semibold text-gray-900 mb-2">Integrated Video Classroom</h3>
+                                <p class="text-gray-600">Built-in video with screen sharing, chat, and recording. No separate Zoom needed.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-4">
+                            <div class="w-12 h-12 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-credit-card text-white text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-semibold text-gray-900 mb-2">Automatic Payment Collection</h3>
+                                <p class="text-gray-600">Students pay when booking. You get paid automatically. No chasing payments.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-4">
+                            <div class="w-12 h-12 bg-secondary rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-chart-line text-white text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-semibold text-gray-900 mb-2">Student Progress Tracking</h3>
+                                <p class="text-gray-600">Session notes, materials library, and progress tracking - all in one place.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="relative">
+                    <div class="bg-white rounded-2xl shadow-2xl p-8 floating">
+                        <div class="text-center mb-6">
+                            <div class="w-16 h-16 bg-gradient-to-r from-primary to-secondary rounded-full flex items-center justify-center mx-auto mb-4">
+                                <span class="text-white font-bold text-2xl">C</span>
+                            </div>
+                            <h3 class="text-2xl font-bold text-gray-900">John Smith - Math Tutor</h3>
+                            <p class="text-gray-600">Available for 1-on-1 sessions</p>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <span class="text-gray-700">Monday, Dec 16</span>
+                                <span class="text-primary font-semibold">2:00 PM - 3:00 PM</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <span class="text-gray-700">Tuesday, Dec 17</span>
+                                <span class="text-primary font-semibold">4:00 PM - 5:00 PM</span>
+                            </div>
+                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <span class="text-gray-700">Wednesday, Dec 18</span>
+                                <span class="text-primary font-semibold">3:00 PM - 4:00 PM</span>
+                            </div>
+                        </div>
+                        
+                        <button class="w-full bg-primary text-white py-3 rounded-lg font-semibold mt-6 hover:bg-yellow-400 transition-colors">
+                            Book Session - $60/hour
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                    See It In Action
+                </h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    Watch how easy it is for students to book and join your sessions.
+                </p>
+            </div>
+            
+            <div class="bg-gray-900 rounded-2xl p-8 text-center">
+                <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                    <div class="flex items-center justify-center mb-4">
+                        <div class="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                        <div class="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                        <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                    </div>
+                    <p class="text-gray-400 text-sm">Demo Video Coming Soon</p>
+                    <div class="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mx-auto mt-4">
+                        <i class="fas fa-play text-white text-2xl"></i>
+                    </div>
+                </div>
+                <p class="text-gray-300">
+                    Interactive demo showing: Student books → Gets email → Clicks "Join Session" → Video classroom opens
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="py-20 bg-gray-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                    Simple, Transparent Pricing
+                </h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    No hidden fees. No transaction fees. Just one monthly price for everything.
+                </p>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+                <!-- Starter Plan -->
+                <div class="bg-white rounded-2xl shadow-lg p-8 border border-gray-200">
+                    <div class="text-center mb-8">
+                        <h3 class="text-2xl font-bold text-gray-900 mb-2">Starter</h3>
+                        <div class="text-4xl font-bold text-gray-900 mb-2">$19</div>
+                        <div class="text-gray-600">/month</div>
+                    </div>
+                    
+                    <ul class="space-y-4 mb-8">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Up to 20 sessions/month</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>45-minute session limit</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Shareable booking link</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Integrated video classroom</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Email support</span>
+                        </li>
+                    </ul>
+                    
+                    <button onclick="scrollToWaitlist()" class="w-full bg-gray-900 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors">
+                        Join Waitlist
+                    </button>
+                </div>
+                
+                <!-- Pro Plan (Most Popular) -->
+                <div class="bg-white rounded-2xl shadow-2xl p-8 border-2 border-primary relative">
+                    <div class="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                        <span class="bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">Most Popular</span>
+                    </div>
+                    
+                    <div class="text-center mb-8">
+                        <h3 class="text-2xl font-bold text-gray-900 mb-2">Pro</h3>
+                        <div class="text-4xl font-bold text-gray-900 mb-2">$39</div>
+                        <div class="text-gray-600">/month</div>
+                    </div>
+                    
+                    <ul class="space-y-4 mb-8">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Unlimited sessions</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>2-hour session limit</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Session recording</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Custom branding</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Priority support</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Student progress tracking</span>
+                        </li>
+                    </ul>
+                    
+                    <button onclick="scrollToWaitlist()" class="w-full bg-primary text-white py-3 rounded-lg font-semibold hover:bg-yellow-400 transition-colors">
+                        Join Waitlist
+                    </button>
+                </div>
+                
+                <!-- Enterprise Plan -->
+                <div class="bg-white rounded-2xl shadow-lg p-8 border border-gray-200">
+                    <div class="text-center mb-8">
+                        <h3 class="text-2xl font-bold text-gray-900 mb-2">Enterprise</h3>
+                        <div class="text-4xl font-bold text-gray-900 mb-2">$99</div>
+                        <div class="text-gray-600">/month</div>
+                    </div>
+                    
+                    <ul class="space-y-4 mb-8">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Everything in Pro</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Group tutoring (up to 8 students)</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>Advanced analytics</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>API access</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-primary mr-3"></i>
+                            <span>White-label options</span>
+                        </li>
+                    </ul>
+                    
+                    <button onclick="scrollToWaitlist()" class="w-full bg-gray-900 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-colors">
+                        Join Waitlist
+                    </button>
+                </div>
+            </div>
+            
+            <div class="text-center mt-12">
+                <p class="text-gray-600 mb-4">
+                    <strong>Early Bird Special:</strong> First 100 tutors get lifetime access to Pro features
+                </p>
+                <p class="text-sm text-gray-500">
+                    * Payment processing fees (2.9% + 30¢) passed to students
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Social Proof Section -->
+    <section class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                    Join Independent Tutors Across Canada
+                </h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    Stop paying 30% commission to Wyzant. Keep 100% of your revenue with ClassroomLY.
+                </p>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="text-center p-6">
+                    <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-chart-line text-primary text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Keep 100% Revenue</h3>
+                    <p class="text-gray-600">No 30% commission like Wyzant. Just $39/month flat fee.</p>
+                </div>
+                
+                <div class="text-center p-6">
+                    <div class="w-16 h-16 bg-secondary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-users text-secondary text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Own Your Students</h3>
+                    <p class="text-gray-600">Build direct relationships. No marketplace dependency.</p>
+                </div>
+                
+                <div class="text-center p-6">
+                    <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-clock text-primary text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-900 mb-2">Save 5+ Hours/Week</h3>
+                    <p class="text-gray-600">No more switching between Calendly, Zoom, and payment apps.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Waitlist Section -->
+    <section id="waitlist" class="py-20 bg-gradient-to-r from-primary to-secondary">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">
+                Ready to Simplify Your Tutoring Business?
+            </h2>
+            <p class="text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+                Join the waitlist and be the first to know when ClassroomLY launches. 
+                First 100 tutors get lifetime access to Pro features.
+            </p>
+            
+            <form id="waitlist-form" class="max-w-md mx-auto">
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <input 
+                        type="email" 
+                        id="email" 
+                        placeholder="Enter your email address" 
+                        required
+                        class="flex-1 px-6 py-4 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/50"
+                    >
+                    <button 
+                        type="submit" 
+                        class="bg-white text-primary px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+                    >
+                        Join Waitlist
+                    </button>
+                </div>
+                <p class="text-white/70 text-sm mt-4">
+                    🔒 We'll never spam you. Unsubscribe anytime.
+                </p>
+            </form>
+            
+            <div id="success-message" class="hidden mt-6 p-4 bg-white/10 rounded-lg">
+                <p class="text-white font-semibold">🎉 Welcome to the waitlist! Check your email for confirmation.</p>
+            </div>
+            
+            <div class="mt-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+                <div>
+                    <div class="text-3xl font-bold text-white">100+</div>
+                    <div class="text-white/70 text-sm">Waitlist Signups</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-white">Q2 2026</div>
+                    <div class="text-white/70 text-sm">Launch Date</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-white">3 Months</div>
+                    <div class="text-white/70 text-sm">Free Trial</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-white">$39</div>
+                    <div class="text-white/70 text-sm">Monthly Price</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-white py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid md:grid-cols-4 gap-8">
+                <div>
+                    <div class="flex items-center mb-4">
+                        <div class="w-8 h-8 bg-gradient-to-r from-primary to-secondary rounded-lg flex items-center justify-center">
+                            <span class="text-white font-bold text-sm">C</span>
+                        </div>
+                        <span class="ml-2 text-xl font-bold">ClassroomLY</span>
+                    </div>
+                    <p class="text-gray-400">
+                        All-in-one online tutoring platform for independent tutors.
+                    </p>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold mb-4">Product</h3>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="#features" class="hover:text-white transition-colors">Features</a></li>
+                        <li><a href="#pricing" class="hover:text-white transition-colors">Pricing</a></li>
+                        <li><a href="#demo" class="hover:text-white transition-colors">Demo</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold mb-4">Resources</h3>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="#" class="hover:text-white transition-colors">Blog</a></li>
+                        <li><a href="#" class="hover:text-white transition-colors">Help Center</a></li>
+                        <li><a href="#" class="hover:text-white transition-colors">Contact</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold mb-4">Legal</h3>
+                    <ul class="space-y-2 text-gray-400">
+                        <li><a href="#" class="hover:text-white transition-colors">Privacy Policy</a></li>
+                        <li><a href="#" class="hover:text-white transition-colors">Terms of Service</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
+                <p>&copy; 2024 ClassroomLY. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Smooth scrolling
+        function scrollToWaitlist() {
+            document.getElementById('waitlist').scrollIntoView({ 
+                behavior: 'smooth' 
+            });
+        }
+        
+        function scrollToDemo() {
+            document.getElementById('demo').scrollIntoView({ 
+                behavior: 'smooth' 
+            });
+        }
+        
+        // Waitlist form handling
+        document.getElementById('waitlist-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const successMessage = document.getElementById('success-message');
+            
+            // Simple validation
+            if (email && email.includes('@')) {
+                // In a real implementation, you would send this to your backend
+                console.log('Waitlist signup:', email);
+                
+                // Show success message
+                successMessage.classList.remove('hidden');
+                
+                // Reset form
+                document.getElementById('email').value = '';
+                
+                // Update counter (mock)
+                const counter = document.querySelector('.text-3xl.font-bold.text-white');
+                if (counter) {
+                    const current = parseInt(counter.textContent);
+                    counter.textContent = (current + 1) + '+';
+                }
+                
+                // Scroll to success message
+                successMessage.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+        
+        // Add some interactivity
+        document.addEventListener('DOMContentLoaded', function() {
+            // Animate counters on scroll
+            const observerOptions = {
+                threshold: 0.5,
+                rootMargin: '0px 0px -100px 0px'
+            };
+            
+            const observer = new IntersectionObserver(function(entries) {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('animate-pulse');
+                    }
+                });
+            }, observerOptions);
+            
+            // Observe pricing cards
+            document.querySelectorAll('.bg-white.rounded-2xl').forEach(card => {
+                observer.observe(card);
+            });
+        });
+    </script>
+</body>
+</html>

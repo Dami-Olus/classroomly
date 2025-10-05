@@ -2,7 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const prisma = require('../lib/prisma');
+const supabase = require('../lib/prisma');
 const { validateBody } = require('../middleware/validation');
 const crypto = require('crypto');
 const { sendEmail } = require('../lib/email');
@@ -24,7 +24,16 @@ router.post('/register', validateBody(registerSchema), async (req, res) => {
     const { email, password, firstName, lastName, userType, hourlyRate, subjects } = req.validatedBody;
 
     // Check if user already exists
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const { data: existing, error: findError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
+    
+    if (findError && findError.code !== 'PGRST116') { // PGRST116 = no rows returned
+      throw findError;
+    }
+    
     if (existing) {
       return res.status(409).json({ success: false, message: 'Email already registered' });
     }
@@ -38,21 +47,27 @@ router.post('/register', validateBody(registerSchema), async (req, res) => {
     console.log('Generated verification token:', verificationToken);
 
     // Create user
-    const user = await prisma.user.create({
-      data: {
+    const { data: user, error: createError } = await supabase
+      .from('users')
+      .insert({
         email,
-        passwordHash,
-        firstName,
-        lastName,
-        userType,
-        hourlyRate: userType === 'TUTOR' ? hourlyRate : undefined,
-        subjects: userType === 'TUTOR' ? (Array.isArray(subjects) ? subjects.join(",") : (subjects || "")) : "",
-        isVerified: false,
-        isActive: true,
-        verificationToken,
-        verificationTokenExpires
-      }
-    });
+        password_hash: passwordHash,
+        first_name: firstName,
+        last_name: lastName,
+        user_type: userType.toLowerCase(),
+        hourly_rate: userType === 'TUTOR' ? hourlyRate : null,
+        subjects: userType === 'TUTOR' ? subjects || [] : [],
+        is_verified: false,
+        is_active: true,
+        verification_token: verificationToken,
+        verification_token_expires: verificationTokenExpires.toISOString()
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      throw createError;
+    }
 
     // Send verification email
     const verifyUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
@@ -67,7 +82,7 @@ router.post('/register', validateBody(registerSchema), async (req, res) => {
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user.id, email: user.email, userType: user.userType },
+      { id: user.id, email: user.email, userType: user.user_type },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
@@ -78,9 +93,9 @@ router.post('/register', validateBody(registerSchema), async (req, res) => {
       data: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        userType: user.userType
+        firstName: user.first_name,
+        lastName: user.last_name,
+        userType: user.user_type
       },
       token
     });
@@ -98,42 +113,64 @@ router.get('/verify-email', async (req, res) => {
     
     if (!token) {
       // Try to find a user who is already verified (for friendlier UX)
-      const user = await prisma.user.findFirst({ where: { isVerified: true } });
+      const { data: user } = await supabase
+        .from('users')
+        .select('*')
+        .eq('is_verified', true)
+        .single();
       if (user) {
         return res.status(200).json({ success: true, message: 'Email already verified.' });
       }
       return res.status(400).json({ success: false, message: 'Verification token is required' });
     }
     
-    const user = await prisma.user.findFirst({ where: { verificationToken: token } });
+    const { data: user, error: findError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('verification_token', token)
+      .single();
+    
+    if (findError && findError.code !== 'PGRST116') {
+      throw findError;
+    }
     console.log('User found:', user ? 'Yes' : 'No');
     
     if (!user) {
       // Try to find a user who is already verified (for friendlier UX)
-      const alreadyVerified = await prisma.user.findFirst({ where: { isVerified: true, verificationToken: null } });
+      const { data: alreadyVerified } = await supabase
+        .from('users')
+        .select('*')
+        .eq('is_verified', true)
+        .is('verification_token', null)
+        .single();
       if (alreadyVerified) {
         return res.status(200).json({ success: true, message: 'Email already verified.' });
       }
       // Let's also check if there are any users with verification tokens
-      const allUsersWithTokens = await prisma.user.findMany({
-        where: { verificationToken: { not: null } },
-        select: { id: true, email: true, verificationToken: true }
-      });
+      const { data: allUsersWithTokens } = await supabase
+        .from('users')
+        .select('id, email, verification_token')
+        .not('verification_token', 'is', null);
       console.log('All users with verification tokens:', allUsersWithTokens);
       
       return res.status(400).json({ success: false, message: 'Invalid or expired verification token' });
     }
-    if (user.verificationTokenExpires && user.verificationTokenExpires < new Date()) {
+    if (user.verification_token_expires && new Date(user.verification_token_expires) < new Date()) {
       return res.status(400).json({ success: false, message: 'Verification token has expired' });
     }
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        isVerified: true,
-        verificationToken: null,
-        verificationTokenExpires: null
-      }
-    });
+    
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        is_verified: true,
+        verification_token: null,
+        verification_token_expires: null
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      throw updateError;
+    }
     return res.status(200).json({ success: true, message: 'Email verified successfully. You can now log in.' });
   } catch (error) {
     console.error('Email verification error:', error);
@@ -151,30 +188,39 @@ router.post('/login', validateBody(loginSchema), async (req, res) => {
     const { email, password } = req.validatedBody;
 
     // Find user by email
-    const user = await prisma.user.findUnique({ where: { email } });
+    const { data: user, error: findError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+    
+    if (findError && findError.code !== 'PGRST116') {
+      throw findError;
+    }
+    
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
     // Check if user is active
-    if (!user.isActive) {
+    if (!user.is_active) {
       return res.status(403).json({ success: false, message: 'Account is deactivated' });
     }
 
     // Check if user is verified (optional, can be removed if not required)
-    if (!user.isVerified) {
+    if (!user.is_verified) {
       return res.status(403).json({ success: false, message: 'Account is not verified' });
     }
 
     // Verify password
-    const valid = await bcrypt.compare(password, user.passwordHash);
+    const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
     // Generate JWT
     const token = jwt.sign(
-      { id: user.id, email: user.email, userType: user.userType },
+      { id: user.id, email: user.email, userType: user.user_type },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
@@ -185,9 +231,9 @@ router.post('/login', validateBody(loginSchema), async (req, res) => {
       data: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        userType: user.userType
+        firstName: user.first_name,
+        lastName: user.last_name,
+        userType: user.user_type
       },
       token
     });

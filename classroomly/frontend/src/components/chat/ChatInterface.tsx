@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, getAuthenticatedSupabase } from "../../lib/supabaseClient";
 import toast from "react-hot-toast";
 
 interface ChatMessage {
@@ -57,11 +57,18 @@ export default function ChatInterface({
     }
   }, [messages]);
 
+  // Get authenticated Supabase client
+  const getAuthClient = () => {
+    return getAuthenticatedSupabase();
+  };
+
   // Subscribe to real-time messages
   useEffect(() => {
     let channel: any = null;
+    const authClient = getAuthenticatedSupabase();
+    
     if (sessionId) {
-      channel = supabase
+      channel = authClient
         .channel(`chat-session-${sessionId}`)
         .on(
           "postgres_changes",
@@ -82,7 +89,7 @@ export default function ChatInterface({
         )
         .subscribe();
     } else if (recipientId) {
-      channel = supabase
+      channel = authClient
         .channel(`chat-dm-${currentUserId}-${recipientId}`)
         .on(
           "postgres_changes",
@@ -104,7 +111,7 @@ export default function ChatInterface({
         .subscribe();
     }
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      if (channel) authClient.removeChannel(channel);
     };
   }, [sessionId, recipientId, currentUserId]);
 
@@ -117,7 +124,8 @@ export default function ChatInterface({
   const loadMessages = async () => {
     setIsLoading(true);
     try {
-      let query = supabase
+      const authClient = getAuthenticatedSupabase();
+      let query = authClient
         .from("messages")
         .select("*")
         .order("created_at", { ascending: true });
@@ -128,7 +136,9 @@ export default function ChatInterface({
           `and(sender_id.eq.${currentUserId},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${currentUserId})`
         );
       }
+      
       const { data, error } = await query;
+      
       if (error) {
         toast.error("Failed to load messages");
         return;
@@ -143,7 +153,8 @@ export default function ChatInterface({
 
   const markMessageAsRead = async (messageId: string) => {
     try {
-      await supabase.from("messages").update({ is_read: true }).eq("id", messageId);
+      const authClient = getAuthenticatedSupabase();
+      await authClient.from("messages").update({ is_read: true }).eq("id", messageId);
     } catch (error) {
       // Silent fail
     }
@@ -152,7 +163,9 @@ export default function ChatInterface({
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
+    
     try {
+      const authClient = getAuthenticatedSupabase();
       const messageData: any = {
         sender_id: currentUserId,
         content: newMessage.trim(),
@@ -165,11 +178,14 @@ export default function ChatInterface({
       if (recipientId) {
         messageData.recipient_id = recipientId;
       }
-      const { error } = await supabase.from("messages").insert([messageData]);
+      
+      const { error } = await authClient.from("messages").insert([messageData]);
+      
       if (error) {
         toast.error("Failed to send message");
         return;
       }
+      
       setNewMessage("");
     } catch (error) {
       toast.error("Failed to send message");
@@ -192,14 +208,15 @@ export default function ChatInterface({
       const fileExt = file.name.split(".").pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `chat-files/${sessionId || recipientId}/${fileName}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const authClient = getAuthClient();
+      const { data: uploadData, error: uploadError } = await authClient.storage
         .from("chat-files")
         .upload(filePath, file);
       if (uploadError) {
         toast.error("Failed to upload file");
         return;
       }
-      const { data: urlData } = supabase.storage.from("chat-files").getPublicUrl(filePath);
+      const { data: urlData } = authClient.storage.from("chat-files").getPublicUrl(filePath);
       const messageData: any = {
         sender_id: currentUserId,
         content: `Sent a file: ${file.name}`,
@@ -215,7 +232,7 @@ export default function ChatInterface({
       if (recipientId) {
         messageData.recipient_id = recipientId;
       }
-      const { error: messageError } = await supabase.from("messages").insert([messageData]);
+      const { error: messageError } = await authClient.from("messages").insert([messageData]);
       if (messageError) {
         toast.error("Failed to send file");
         return;

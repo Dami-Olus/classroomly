@@ -1,12 +1,11 @@
 const express = require('express');
-const { PrismaClient, BookingStatus, PaymentStatus } = require('@prisma/client');
 const { authenticateUser } = require('../middleware/auth');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { z } = require('zod');
+const supabase  = require('../lib/supabase');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Generate shareable booking link (tutors only)
 router.post('/generate-link', authenticateUser, async (req, res) => {
@@ -20,43 +19,50 @@ router.post('/generate-link', authenticateUser, async (req, res) => {
     }
 
     // Check if class exists and belongs to the tutor
-    const classData = await prisma.class.findUnique({
-      where: { id: classId }
-    });
+    const { data: classData, error: classError } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', classId)
+      .single();
 
-    if (!classData) {
+    if (classError || !classData) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (classData.tutorId !== userId) {
+    if (classData.tutor_id !== userId) {
       return res.status(403).json({ message: 'You can only generate links for your own classes' });
     }
 
     // Generate unique token
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAtDate = expiresAt ? new Date(expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Default 7 days
+    const expiresAtDate = expiresAt ? new Date(expiresAt).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     // Create booking link
-    const bookingLink = await prisma.bookingLink.create({
-      data: {
+    const { data: bookingLink, error: linkError } = await supabase
+      .from('booking_links')
+      .insert({
         token,
-        classId,
-        tutorId: userId,
-        expiresAt: expiresAtDate,
-        isActive: true
-      },
-      include: {
-        class: {
-          select: {
-            id: true,
-            title: true,
-            subject: true,
-            durationMinutes: true,
-            pricePerSession: true
-          }
-        }
-      }
-    });
+        class_id: classId,
+        tutor_id: userId,
+        expires_at: expiresAtDate,
+        is_active: true
+      })
+      .select(`
+        *,
+        class:classes (
+          id,
+          title,
+          subject,
+          duration_minutes,
+          price_per_session
+        )
+      `)
+      .single();
+
+    if (linkError) {
+      console.error('Error creating booking link:', linkError);
+      return res.status(500).json({ message: 'Failed to create booking link' });
+    }
 
     const shareableUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/book/${token}`;
 
@@ -77,36 +83,35 @@ router.get('/link/:token', async (req, res) => {
   try {
     const { token } = req.params;
 
-    const bookingLink = await prisma.bookingLink.findUnique({
-      where: { token },
-      include: {
-        class: {
-          include: {
-            tutor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                bio: true,
-                subjects: true,
-                hourlyRate: true
-              }
-            }
-          }
-        }
-      }
-    });
+    const { data: bookingLink, error } = await supabase
+      .from('booking_links')
+      .select(`
+        *,
+        class:classes (
+          *,
+          tutor:users!classes_tutor_id_fkey (
+            id,
+            first_name,
+            last_name,
+            email,
+            bio,
+            subjects,
+            hourly_rate
+          )
+        )
+      `)
+      .eq('token', token)
+      .single();
 
-    if (!bookingLink) {
+    if (error || !bookingLink) {
       return res.status(404).json({ message: 'Booking link not found' });
     }
 
-    if (!bookingLink.isActive) {
+    if (!bookingLink.is_active) {
       return res.status(400).json({ message: 'This booking link is no longer active' });
     }
 
-    if (bookingLink.expiresAt < new Date()) {
+    if (new Date(bookingLink.expires_at) < new Date()) {
       return res.status(400).json({ message: 'This booking link has expired' });
     }
 
@@ -124,27 +129,29 @@ router.post('/link/:token', async (req, res) => {
     const { scheduledAt, notes, studentName, studentEmail } = req.body;
 
     // Validate booking link
-    const bookingLink = await prisma.bookingLink.findUnique({
-      where: { token },
-      include: {
-        class: true
-      }
-    });
+    const { data: bookingLink, error: linkError } = await supabase
+      .from('booking_links')
+      .select(`
+        *,
+        class:classes (*)
+      `)
+      .eq('token', token)
+      .single();
 
-    if (!bookingLink) {
+    if (linkError || !bookingLink) {
       return res.status(404).json({ message: 'Booking link not found' });
     }
 
-    if (!bookingLink.isActive) {
+    if (!bookingLink.is_active) {
       return res.status(400).json({ message: 'This booking link is no longer active' });
     }
 
-    if (bookingLink.expiresAt < new Date()) {
+    if (new Date(bookingLink.expires_at) < new Date()) {
       return res.status(400).json({ message: 'This booking link has expired' });
     }
 
     // Check if class is still active
-    if (!bookingLink.class.isActive) {
+    if (!bookingLink.class.is_active) {
       return res.status(400).json({ message: 'This class is no longer available for booking' });
     }
 
@@ -155,55 +162,64 @@ router.post('/link/:token', async (req, res) => {
     }
 
     // Find or create student user
-    let student = await prisma.user.findUnique({
-      where: { email: studentEmail }
-    });
+    let { data: student } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', studentEmail)
+      .single();
 
     if (!student) {
       // Create new student account with default password
-      const defaultPassword = crypto.randomBytes(16).toString('hex'); // Generate random password
+      const defaultPassword = crypto.randomBytes(16).toString('hex');
       const passwordHash = await bcrypt.hash(defaultPassword, 10);
       
-      student = await prisma.user.create({
-        data: {
+      const nameParts = studentName.split(' ');
+      const { data: newStudent, error: userError } = await supabase
+        .from('users')
+        .insert({
           email: studentEmail,
-          firstName: studentName.split(' ')[0] || studentName,
-          lastName: studentName.split(' ').slice(1).join(' ') || '',
-          userType: 'STUDENT',
-          isVerified: true, // Auto-verify for booking links
-          isActive: true,
-          passwordHash: passwordHash,
-          subjects: '' // Default empty subjects for students
-        }
-      });
+          first_name: nameParts[0] || studentName,
+          last_name: nameParts.slice(1).join(' ') || '',
+          user_type: 'STUDENT',
+          is_verified: true,
+          is_active: true,
+          password_hash: passwordHash,
+          subjects: ''
+        })
+        .select()
+        .single();
+
+      if (userError) {
+        console.error('Error creating student:', userError);
+        return res.status(500).json({ message: 'Failed to create student account' });
+      }
+
+      student = newStudent;
     }
 
     // Check for booking conflicts
-    const existingBooking = await prisma.booking.findFirst({
-      where: {
-        studentId: student.id,
-        scheduledAt: {
-          gte: new Date(scheduledDate.getTime() - 30 * 60 * 1000),
-          lte: new Date(scheduledDate.getTime() + 30 * 60 * 1000)
-        }
-      }
-    });
+    const conflictStart = new Date(scheduledDate.getTime() - 30 * 60 * 1000).toISOString();
+    const conflictEnd = new Date(scheduledDate.getTime() + 30 * 60 * 1000).toISOString();
 
-    // Check for tutor conflicts (tutor already has a booking at this time)
-    const tutorConflict = await prisma.booking.findFirst({
-      where: {
-        class: {
-          tutorId: bookingLink.class.tutorId
-        },
-        scheduledAt: {
-          gte: new Date(scheduledDate.getTime() - 30 * 60 * 1000),
-          lte: new Date(scheduledDate.getTime() + 30 * 60 * 1000)
-        },
-        status: {
-          in: ['PENDING', 'CONFIRMED']
-        }
-      }
-    });
+    const { data: existingBooking } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('student_id', student.id)
+      .gte('scheduled_at', conflictStart)
+      .lte('scheduled_at', conflictEnd)
+      .limit(1)
+      .single();
+
+    // Check for tutor conflicts
+    const { data: tutorConflict } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('tutor_id', bookingLink.class.tutor_id)
+      .in('status', ['PENDING', 'CONFIRMED'])
+      .gte('scheduled_at', conflictStart)
+      .lte('scheduled_at', conflictEnd)
+      .limit(1)
+      .single();
 
     if (existingBooking) {
       return res.status(409).json({ message: 'You already have a booking at this time' });
@@ -214,39 +230,41 @@ router.post('/link/:token', async (req, res) => {
     }
 
     // Create the booking
-    const booking = await prisma.booking.create({
-      data: {
-        classId: bookingLink.classId,
-        studentId: student.id,
-        tutorId: bookingLink.class.tutorId, // <-- Add this line
-        scheduledAt: scheduledDate,
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .insert({
+        class_id: bookingLink.class_id,
+        student_id: student.id,
+        tutor_id: bookingLink.class.tutor_id,
+        scheduled_at: scheduledDate.toISOString(),
         notes: notes || '',
-        status: BookingStatus.PENDING,
-        totalAmount: bookingLink.class.pricePerSession
-      },
-      include: {
-        class: {
-          include: {
-            tutor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
-            }
-          }
-        },
-        student: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    });
+        status: 'PENDING',
+        total_amount: bookingLink.class.price_per_session
+      })
+      .select(`
+        *,
+        class:classes (
+          *,
+          tutor:users!classes_tutor_id_fkey (
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        ),
+        student:users!bookings_student_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .single();
+
+    if (bookingError) {
+      console.error('Error creating booking:', bookingError);
+      return res.status(500).json({ message: 'Failed to create booking' });
+    }
 
     res.status(201).json({ data: booking });
   } catch (error) {
@@ -267,32 +285,36 @@ router.post('/schedule', authenticateUser, async (req, res) => {
     }
 
     // Check if class exists and belongs to the tutor
-    const classData = await prisma.class.findUnique({
-      where: { id: classId }
-    });
+    const { data: classData, error: classError } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', classId)
+      .single();
 
-    if (!classData) {
+    if (classError || !classData) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (classData.tutorId !== userId) {
+    if (classData.tutor_id !== userId) {
       return res.status(403).json({ message: 'You can only schedule classes for your own classes' });
     }
 
-    if (!classData.isActive) {
+    if (!classData.is_active) {
       return res.status(400).json({ message: 'This class is not active' });
     }
 
     // Find student by email
-    const student = await prisma.user.findUnique({
-      where: { email: studentEmail }
-    });
+    const { data: student, error: studentError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', studentEmail)
+      .single();
 
-    if (!student) {
+    if (studentError || !student) {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    if (student.userType !== 'STUDENT') {
+    if (student.user_type !== 'STUDENT') {
       return res.status(400).json({ message: 'The provided email does not belong to a student' });
     }
 
@@ -303,31 +325,27 @@ router.post('/schedule', authenticateUser, async (req, res) => {
     }
 
     // Check for booking conflicts
-    const existingBooking = await prisma.booking.findFirst({
-      where: {
-        studentId: student.id,
-        scheduledAt: {
-          gte: new Date(scheduledDate.getTime() - 30 * 60 * 1000),
-          lte: new Date(scheduledDate.getTime() + 30 * 60 * 1000)
-        }
-      }
-    });
+    const conflictStart = new Date(scheduledDate.getTime() - 30 * 60 * 1000).toISOString();
+    const conflictEnd = new Date(scheduledDate.getTime() + 30 * 60 * 1000).toISOString();
 
-    // Check for tutor conflicts (tutor already has a booking at this time)
-    const tutorConflict = await prisma.booking.findFirst({
-      where: {
-        class: {
-          tutorId: classData.tutorId
-        },
-        scheduledAt: {
-          gte: new Date(scheduledDate.getTime() - 30 * 60 * 1000),
-          lte: new Date(scheduledDate.getTime() + 30 * 60 * 1000)
-        },
-        status: {
-          in: ['PENDING', 'CONFIRMED']
-        }
-      }
-    });
+    const { data: existingBooking } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('student_id', student.id)
+      .gte('scheduled_at', conflictStart)
+      .lte('scheduled_at', conflictEnd)
+      .limit(1)
+      .single();
+
+    const { data: tutorConflict } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('tutor_id', classData.tutor_id)
+      .in('status', ['PENDING', 'CONFIRMED'])
+      .gte('scheduled_at', conflictStart)
+      .lte('scheduled_at', conflictEnd)
+      .limit(1)
+      .single();
 
     if (existingBooking) {
       return res.status(400).json({ message: 'Student already has a booking at this time' });
@@ -338,39 +356,41 @@ router.post('/schedule', authenticateUser, async (req, res) => {
     }
 
     // Create the booking
-    const booking = await prisma.booking.create({
-      data: {
-        classId,
-        studentId: student.id,
-        tutorId: classData.tutorId, // <-- Add this line
-        scheduledAt: scheduledDate,
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .insert({
+        class_id: classId,
+        student_id: student.id,
+        tutor_id: classData.tutor_id,
+        scheduled_at: scheduledDate.toISOString(),
         notes: notes || '',
-        status: BookingStatus.CONFIRMED, // Auto-confirm when tutor schedules
-        totalAmount: classData.pricePerSession
-      },
-      include: {
-        class: {
-          include: {
-            tutor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
-            }
-          }
-        },
-        student: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    });
+        status: 'CONFIRMED', // Auto-confirm when tutor schedules
+        total_amount: classData.price_per_session
+      })
+      .select(`
+        *,
+        class:classes (
+          *,
+          tutor:users!classes_tutor_id_fkey (
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        ),
+        student:users!bookings_student_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .single();
+
+    if (bookingError) {
+      console.error('Error creating booking:', bookingError);
+      return res.status(500).json({ message: 'Failed to create booking' });
+    }
 
     res.status(201).json({ data: booking });
   } catch (error) {
@@ -386,103 +406,55 @@ router.get('/', authenticateUser, async (req, res) => {
     const userType = req.user.userType;
     const { classId } = req.query;
 
-    let bookings;
+    let query = supabase
+      .from('bookings')
+      .select(`
+        *,
+        class:classes (
+          id,
+          title,
+          subject,
+          duration_minutes,
+          price_per_session,
+          tutor:users!classes_tutor_id_fkey (
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        ),
+        student:users!bookings_student_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .order('scheduled_at', { ascending: false });
+
     if (userType === 'TUTOR') {
-      // Tutors see bookings for their classes
-      const where = {
-        class: {
-          tutorId: userId
-        }
-      };
-      
-      // Add classId filter if provided
-      if (classId) {
-        where.classId = classId;
-      }
-      
-      bookings = await prisma.booking.findMany({
-        where,
-        include: {
-          class: {
-            select: {
-              id: true,
-              title: true,
-              subject: true,
-              durationMinutes: true,
-              pricePerSession: true,
-              tutor: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true
-                }
-              }
-            }
-          },
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true
-            }
-          }
-        },
-        orderBy: {
-          scheduledAt: 'desc'
-        }
-      });
+      query = query.eq('tutor_id', userId);
     } else {
-      // Students see their own bookings
-      const where = {
-        studentId: userId
-      };
-      
-      // Add classId filter if provided
-      if (classId) {
-        where.classId = classId;
-      }
-      
-      bookings = await prisma.booking.findMany({
-        where,
-        include: {
-          class: {
-            select: {
-              id: true,
-              title: true,
-              subject: true,
-              durationMinutes: true,
-              pricePerSession: true,
-              tutor: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true
-                }
-              }
-            }
-          },
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true
-            }
-          }
-        },
-        orderBy: {
-          scheduledAt: 'desc'
-        }
-      });
+      query = query.eq('student_id', userId);
     }
 
-    res.json({ data: bookings.map(b => ({
-      ...b,
-      tutorId: b.class?.tutor?.id // flatten for frontend use
-    })) });
+    if (classId) {
+      query = query.eq('class_id', classId);
+    }
+
+    const { data: bookings, error } = await query;
+
+    if (error) {
+      console.error('Error fetching bookings:', error);
+      return res.status(500).json({ message: 'Failed to fetch bookings' });
+    }
+
+    res.json({ 
+      data: bookings.map(b => ({
+        ...b,
+        tutorId: b.class?.tutor?.id
+      }))
+    });
   } catch (error) {
     console.error('Error fetching bookings:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -495,61 +467,63 @@ router.get('/tutor/:tutorId', async (req, res) => {
     const { tutorId } = req.params;
     const { status, from, to, classId } = req.query;
     
-    // Handle multiple statuses
-    let statusFilter = {};
+    let query = supabase
+      .from('bookings')
+      .select(`
+        id,
+        scheduled_at,
+        status,
+        class_id,
+        student_id,
+        class:classes (
+          title,
+          duration_minutes
+        ),
+        student:users!bookings_student_id_fkey (
+          first_name,
+          last_name
+        )
+      `)
+      .eq('tutor_id', tutorId)
+      .order('scheduled_at', { ascending: true });
+    
+    // Handle status filter
     if (status) {
       if (Array.isArray(status)) {
-        // Multiple statuses provided
-        statusFilter = { status: { in: status } };
+        query = query.in('status', status);
       } else {
-        // Single status provided
-        statusFilter = { status };
+        query = query.eq('status', status);
       }
     }
     
-    const where = {
-      class: { tutorId },
-      ...statusFilter,
-      ...(from && { scheduledAt: { gte: new Date(from) } }),
-      ...(to && { scheduledAt: { lte: new Date(to) } }),
-      ...(classId && { classId }),
-    };
+    if (from) {
+      query = query.gte('scheduled_at', new Date(from).toISOString());
+    }
     
-    const bookings = await prisma.booking.findMany({
-      where,
-      select: {
-        id: true,
-        scheduledAt: true,
-        status: true,
-        classId: true,
-        studentId: true,
-        class: {
-          select: {
-            title: true,
-            durationMinutes: true
-          }
-        },
-        student: {
-          select: {
-            firstName: true,
-            lastName: true
-          }
-        }
-      },
-      orderBy: {
-        scheduledAt: 'asc'
-      }
-    });
+    if (to) {
+      query = query.lte('scheduled_at', new Date(to).toISOString());
+    }
     
-    // Transform the data to include student name and class info
+    if (classId) {
+      query = query.eq('class_id', classId);
+    }
+    
+    const { data: bookings, error } = await query;
+    
+    if (error) {
+      console.error('Error fetching tutor bookings:', error);
+      return res.status(500).json({ message: 'Failed to fetch bookings' });
+    }
+    
+    // Transform the data
     const transformedBookings = bookings.map(booking => ({
       id: booking.id,
-      scheduledAt: booking.scheduledAt,
+      scheduledAt: booking.scheduled_at,
       status: booking.status,
-      classId: booking.classId,
-      studentId: booking.studentId,
-      studentName: `${booking.student.firstName} ${booking.student.lastName}`,
-      durationMinutes: booking.class.durationMinutes,
+      classId: booking.class_id,
+      studentId: booking.student_id,
+      studentName: `${booking.student.first_name} ${booking.student.last_name}`,
+      durationMinutes: booking.class.duration_minutes,
       classTitle: booking.class.title
     }));
     
@@ -560,59 +534,7 @@ router.get('/tutor/:tutorId', async (req, res) => {
   }
 });
 
-// Get booking by ID
-router.get('/:id', authenticateUser, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.id;
-    const userType = req.user.userType;
 
-    const booking = await prisma.booking.findUnique({
-      where: { id },
-      include: {
-        class: {
-          include: {
-            tutor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                bio: true
-              }
-            }
-          }
-        },
-        student: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    });
-
-    if (!booking) {
-      return res.status(404).json({ message: 'Booking not found' });
-    }
-
-    // Check if user has access to this booking
-    if (userType === 'STUDENT' && booking.studentId !== userId) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
-    if (userType === 'TUTOR' && booking.class.tutorId !== userId) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
-    res.json({ data: booking });
-  } catch (error) {
-    console.error('Error fetching booking:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
 // Create new booking (students only)
 router.post('/', authenticateUser, async (req, res) => {
@@ -630,15 +552,17 @@ router.post('/', authenticateUser, async (req, res) => {
     }
 
     // Check if class exists and is active
-    const classData = await prisma.class.findUnique({
-      where: { id: classId }
-    });
+    const { data: classData, error: classError } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('id', classId)
+      .single();
 
-    if (!classData) {
+    if (classError || !classData) {
       return res.status(404).json({ message: 'Class not found' });
     }
 
-    if (!classData.isActive) {
+    if (!classData.is_active) {
       return res.status(400).json({ message: 'This class is not available for booking' });
     }
 
@@ -648,32 +572,28 @@ router.post('/', authenticateUser, async (req, res) => {
       return res.status(400).json({ message: 'Booking must be scheduled for a future time' });
     }
 
-    // Check for booking conflicts (same student, same time)
-    const existingBooking = await prisma.booking.findFirst({
-      where: {
-        studentId: userId,
-        scheduledAt: {
-          gte: new Date(scheduledDate.getTime() - 30 * 60 * 1000), // 30 minutes before
-          lte: new Date(scheduledDate.getTime() + 30 * 60 * 1000)  // 30 minutes after
-        }
-      }
-    });
+    // Check for booking conflicts
+    const conflictStart = new Date(scheduledDate.getTime() - 30 * 60 * 1000).toISOString();
+    const conflictEnd = new Date(scheduledDate.getTime() + 30 * 60 * 1000).toISOString();
 
-    // Check for tutor conflicts (tutor already has a booking at this time)
-    const tutorConflict = await prisma.booking.findFirst({
-      where: {
-        class: {
-          tutorId: classData.tutorId
-        },
-        scheduledAt: {
-          gte: new Date(scheduledDate.getTime() - 30 * 60 * 1000), // 30 minutes before
-          lte: new Date(scheduledDate.getTime() + 30 * 60 * 1000)  // 30 minutes after
-        },
-        status: {
-          in: ['PENDING', 'CONFIRMED']
-        }
-      }
-    });
+    const { data: existingBooking } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('student_id', userId)
+      .gte('scheduled_at', conflictStart)
+      .lte('scheduled_at', conflictEnd)
+      .limit(1)
+      .single();
+
+    const { data: tutorConflict } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('tutor_id', classData.tutor_id)
+      .in('status', ['PENDING', 'CONFIRMED'])
+      .gte('scheduled_at', conflictStart)
+      .lte('scheduled_at', conflictEnd)
+      .limit(1)
+      .single();
 
     if (existingBooking) {
       return res.status(409).json({ message: 'You already have a booking at this time' });
@@ -684,39 +604,41 @@ router.post('/', authenticateUser, async (req, res) => {
     }
 
     // Create the booking
-    const booking = await prisma.booking.create({
-      data: {
-        classId,
-        studentId: userId,
-        tutorId: classData.tutorId, // <-- Set tutorId for permission checks
-        scheduledAt: scheduledDate,
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .insert({
+        class_id: classId,
+        student_id: userId,
+        tutor_id: classData.tutor_id,
+        scheduled_at: scheduledDate.toISOString(),
         notes: notes || '',
-        status: BookingStatus.PENDING,
-        totalAmount: classData.pricePerSession
-      },
-      include: {
-        class: {
-          include: {
-            tutor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true
-              }
-            }
-          }
-        },
-        student: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true
-          }
-        }
-      }
-    });
+        status: 'PENDING',
+        total_amount: classData.price_per_session
+      })
+      .select(`
+        *,
+        class:classes (
+          *,
+          tutor:users!classes_tutor_id_fkey (
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        ),
+        student:users!bookings_student_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .single();
+
+    if (bookingError) {
+      console.error('Error creating booking:', bookingError);
+      return res.status(500).json({ message: 'Failed to create booking' });
+    }
 
     res.status(201).json({ data: booking });
   } catch (error) {
@@ -738,26 +660,29 @@ router.patch('/:id/status', authenticateUser, async (req, res) => {
     }
 
     // Find the booking
-    const booking = await prisma.booking.findUnique({ where: { id } });
-    if (!booking) {
+    const { data: booking, error: findError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !booking) {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
     // Only the tutor or the student who owns the booking can update status
     if (userType === 'TUTOR') {
-      // Tutor can confirm or cancel
       if (status !== 'CONFIRMED' && status !== 'CANCELLED') {
         return res.status(400).json({ message: 'Tutors can only set status to CONFIRMED or CANCELLED' });
       }
-      if (booking.tutorId !== userId) {
+      if (booking.tutor_id !== userId) {
         return res.status(403).json({ message: 'You do not have permission to update this booking' });
       }
     } else if (userType === 'STUDENT') {
-      // Student can cancel their own booking (any status)
       if (status !== 'CANCELLED') {
         return res.status(400).json({ message: 'Students can only set status to CANCELLED' });
       }
-      if (booking.studentId !== userId) {
+      if (booking.student_id !== userId) {
         return res.status(403).json({ message: 'You do not have permission to cancel this booking' });
       }
     } else {
@@ -765,10 +690,18 @@ router.patch('/:id/status', authenticateUser, async (req, res) => {
     }
 
     // Update the booking status
-    const updated = await prisma.booking.update({
-      where: { id },
-      data: { status }
-    });
+    const { data: updated, error: updateError } = await supabase
+      .from('bookings')
+      .update({ status })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Error updating booking:', updateError);
+      return res.status(500).json({ message: 'Failed to update booking' });
+    }
+
     return res.status(200).json({ success: true, data: updated });
   } catch (err) {
     console.error(err);
@@ -777,28 +710,35 @@ router.patch('/:id/status', authenticateUser, async (req, res) => {
 });
 
 // DELETE /api/bookings/:id
-// Allow students to delete their own bookings regardless of status
 router.delete('/:id', authenticateUser, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const booking = await prisma.booking.findUnique({
-      where: { id }
-    });
+    const { data: booking, error: findError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (!booking) {
+    if (findError || !booking) {
       return res.status(404).json({ message: 'Booking not found' });
     }
 
     // Only students can delete their own bookings
-    if (req.user.userType !== 'STUDENT' || booking.studentId !== userId) {
+    if (req.user.userType !== 'STUDENT' || booking.student_id !== userId) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    await prisma.booking.delete({
-      where: { id }
-    });
+    const { error: deleteError } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      console.error('Error deleting booking:', deleteError);
+      return res.status(500).json({ message: 'Failed to delete booking' });
+    }
 
     res.json({ message: 'Booking cancelled successfully' });
   } catch (error) {
@@ -828,24 +768,44 @@ router.post('/:id/reschedule', authenticateUser, async (req, res) => {
     }
 
     // Check booking exists and user is participant
-    const booking = await prisma.booking.findUnique({
-      where: { id },
-      include: { student: true, class: { include: { tutor: true } } }
-    });
-    if (!booking) return res.status(404).json({ message: 'Booking not found' });
-    if (booking.studentId !== userId && booking.class.tutorId !== userId) {
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        student:users!bookings_student_id_fkey (*),
+        class:classes (
+          *,
+          tutor:users!classes_tutor_id_fkey (*)
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (bookingError || !booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    if (booking.student_id !== userId && booking.class.tutor_id !== userId) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
     // Create reschedule request
-    const request = await prisma.rescheduleRequest.create({
-      data: {
-        bookingId: id,
-        requestedById: userId,
-        proposedTime: new Date(proposedTime),
+    const { data: request, error: requestError } = await supabase
+      .from('reschedule_requests')
+      .insert({
+        booking_id: id,
+        requested_by_id: userId,
+        proposed_time: new Date(proposedTime).toISOString(),
         status: 'PENDING'
-      }
-    });
+      })
+      .select()
+      .single();
+
+    if (requestError) {
+      console.error('Error creating reschedule request:', requestError);
+      return res.status(500).json({ message: 'Failed to create reschedule request' });
+    }
+
     return res.status(201).json({ data: request });
   } catch (error) {
     console.error('Reschedule propose error:', error);
@@ -859,31 +819,49 @@ router.post('/:id/reschedule/:requestId/accept', authenticateUser, async (req, r
     const { id, requestId } = req.params;
     const userId = req.user.id;
 
-    // Find reschedule request and include booking.class
-    const request = await prisma.rescheduleRequest.findUnique({
-      where: { id: requestId },
-      include: { booking: { include: { class: true } } }
-    });
-    if (!request || request.bookingId !== id) return res.status(404).json({ message: 'Request not found' });
-    if (request.status !== 'PENDING') return res.status(400).json({ message: 'Request already handled' });
+    // Find reschedule request
+    const { data: request, error: requestError } = await supabase
+      .from('reschedule_requests')
+      .select(`
+        *,
+        booking:bookings (
+          *,
+          class:classes (*)
+        )
+      `)
+      .eq('id', requestId)
+      .single();
 
-    // Only the other party can accept
-    const booking = request.booking;
-    if (request.requestedById === booking.studentId && userId !== booking.class.tutorId) {
-      return res.status(403).json({ message: 'Only tutor can accept' });
-    }
-    if (request.requestedById === booking.class.tutorId && userId !== booking.studentId) {
-      return res.status(403).json({ message: 'Only student can accept' });
+    if (requestError || !request || request.booking_id !== id) {
+      return res.status(404).json({ message: 'Request not found' });
     }
 
-    // Update booking time and request status
-    await prisma.$transaction([
-      prisma.rescheduleRequest.update({ where: { id: requestId }, data: { status: 'ACCEPTED' } }),
-      prisma.booking.update({ where: { id }, data: { scheduledAt: request.proposedTime } })
-    ]);
-    return res.status(200).json({ message: 'Reschedule accepted', newTime: request.proposedTime });
+    if (request.status !== 'PENDING') {
+      return res.status(400).json({ message: 'Request already handled' });
+    }
+
+
+    // Only the other party can decline
+    if (request.requested_by_id === booking.student_id && userId !== booking.class.tutor_id) {
+      return res.status(403).json({ message: 'Only tutor can decline' });
+    }
+    if (request.requested_by_id === booking.class.tutor_id && userId !== booking.student_id) {
+      return res.status(403).json({ message: 'Only student can decline' });
+    }
+
+    const { error: updateError } = await supabase
+      .from('reschedule_requests')
+      .update({ status: 'DECLINED' })
+      .eq('id', requestId);
+
+    if (updateError) {
+      console.error('Error declining reschedule:', updateError);
+      return res.status(500).json({ message: 'Failed to decline reschedule' });
+    }
+
+    return res.status(200).json({ message: 'Reschedule declined' });
   } catch (error) {
-    console.error('Reschedule accept error:', error);
+    console.error('Reschedule decline error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -894,24 +872,46 @@ router.post('/:id/reschedule/:requestId/decline', authenticateUser, async (req, 
     const { id, requestId } = req.params;
     const userId = req.user.id;
 
-    // Find reschedule request and include booking.class
-    const request = await prisma.rescheduleRequest.findUnique({
-      where: { id: requestId },
-      include: { booking: { include: { class: true } } }
-    });
-    if (!request || request.bookingId !== id) return res.status(404).json({ message: 'Request not found' });
-    if (request.status !== 'PENDING') return res.status(400).json({ message: 'Request already handled' });
+    // Find reschedule request with booking + class
+    const { data: request, error: requestError } = await supabase
+      .from('reschedule_requests')
+      .select(`
+        *,
+        booking:bookings (
+          *,
+          class:classes (*)
+        )
+      `)
+      .eq('id', requestId)
+      .single();
+
+    if (requestError || !request || request.booking_id !== id) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    if (request.status !== 'PENDING') {
+      return res.status(400).json({ message: 'Request already handled' });
+    }
+
+    const booking = request.booking;
 
     // Only the other party can decline
-    const booking = request.booking;
-    if (request.requestedById === booking.studentId && userId !== booking.class.tutorId) {
+    if (request.requested_by_id === booking.student_id && userId !== booking.class.tutor_id) {
       return res.status(403).json({ message: 'Only tutor can decline' });
     }
-    if (request.requestedById === booking.class.tutorId && userId !== booking.studentId) {
+    if (request.requested_by_id === booking.class.tutor_id && userId !== booking.student_id) {
       return res.status(403).json({ message: 'Only student can decline' });
     }
 
-    await prisma.rescheduleRequest.update({ where: { id: requestId }, data: { status: 'DECLINED' } });
+    const { error: updateError } = await supabase
+      .from('reschedule_requests')
+      .update({ status: 'DECLINED' })
+      .eq('id', requestId);
+
+    if (updateError) {
+      console.error('Error declining reschedule:', updateError);
+      return res.status(500).json({ message: 'Failed to decline reschedule' });
+    }
+
     return res.status(200).json({ message: 'Reschedule declined' });
   } catch (error) {
     console.error('Reschedule decline error:', error);
@@ -923,58 +923,149 @@ router.post('/:id/reschedule/:requestId/decline', authenticateUser, async (req, 
 router.get('/reschedule-requests', authenticateUser, async (req, res) => {
   try {
     const userId = req.user.id;
-    const userType = req.user.userType;
-    // Fetch requests where user is either the booking's tutor or student, or the requester
-    const requests = await prisma.rescheduleRequest.findMany({
-      where: {
-        OR: [
-          { requestedById: userId },
-          { booking: { studentId: userId } },
-          { booking: { class: { tutorId: userId } } }
-        ]
-      },
-      include: {
-        booking: {
-          include: {
-            class: {
-              select: { id: true, title: true, subject: true, tutorId: true }
-            },
-            student: { select: { id: true, firstName: true, lastName: true, email: true } }
-          }
-        },
-        requestedBy: { select: { id: true, firstName: true, lastName: true, email: true } }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    console.log('Reschedule requests returned to frontend:', JSON.stringify(requests, null, 2));
+
+    // First, get all bookings where user is involved
+    const { data: userBookings, error: bookingError } = await supabase
+      .from('bookings')
+      .select('id')
+      .or(`student_id.eq.${userId},tutor_id.eq.${userId}`);
+
+    if (bookingError) {
+      console.error('Error fetching user bookings:', bookingError);
+      return res.status(500).json({ message: 'Failed to fetch bookings' });
+    }
+
+    const bookingIds = userBookings.map(b => b.id);
+
+    // Now get reschedule requests for those bookings OR requested by user
+    const { data: requests, error } = await supabase
+      .from('reschedule_requests')
+      .select(`
+        *,
+        booking:bookings (
+          *,
+          student:users!bookings_student_id_fkey (
+            id, first_name, last_name, email
+          ),
+          class:classes (
+            id, title, subject, tutor_id,
+            tutor:users!classes_tutor_id_fkey (
+              id, first_name, last_name, email
+            )
+          )
+        ),
+        requested_by:users (
+          id, first_name, last_name, email
+        )
+      `)
+      .or(`requested_by_id.eq.${userId},booking_id.in.(${bookingIds.join(',')})`);
+
+    if (error) {
+      console.error('Error fetching reschedule requests:', error);
+      return res.status(500).json({ message: 'Failed to fetch requests' });
+    }
+
     res.json({ data: requests });
   } catch (error) {
-    console.error('Error fetching reschedule requests:', error);
+    console.error('Reschedule request fetch error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get booking by ID
+router.get('/:id', authenticateUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const userType = req.user.userType;
+
+    const { data: booking, error } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        class:classes (
+          *,
+          tutor:users!classes_tutor_id_fkey (
+            id,
+            first_name,
+            last_name,
+            email,
+            bio
+          )
+        ),
+        student:users!bookings_student_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error || !booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    // Check if user has access to this booking
+    if (userType === 'STUDENT' && booking.student_id !== userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    if (userType === 'TUTOR' && booking.tutor_id !== userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    res.json({ data: booking });
+  } catch (error) {
+    console.error('Error fetching booking:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // GET /api/bookings/:id/reschedule - Get all reschedule requests for a specific booking
+// GET /api/bookings/:id/reschedule - Get all reschedule requests for a specific booking
 router.get('/:id/reschedule', authenticateUser, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-    // Only allow if user is participant
-    const booking = await prisma.booking.findUnique({
-      where: { id },
-      include: { class: true }
-    });
-    if (!booking) return res.status(404).json({ message: 'Booking not found' });
-    if (booking.studentId !== userId && booking.class.tutorId !== userId) {
+
+    // Fetch booking with class info
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        class:classes (*)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (bookingError || !booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    // Authorization check: must be student or tutor
+    if (booking.student_id !== userId && booking.class.tutor_id !== userId) {
       return res.status(403).json({ message: 'Not authorized' });
     }
-    const requests = await prisma.rescheduleRequest.findMany({
-      where: { bookingId: id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        requestedBy: { select: { id: true, firstName: true, lastName: true, email: true } }
-      }
-    });
+
+    // Fetch all reschedule requests for this booking
+    const { data: requests, error: requestsError } = await supabase
+      .from('reschedule_requests')
+      .select(`
+        *,
+        requested_by:users (
+          id, first_name, last_name, email
+        )
+      `)
+      .eq('booking_id', id)
+      .order('created_at', { ascending: false });
+
+    if (requestsError) {
+      console.error('Error fetching reschedule requests:', requestsError);
+      return res.status(500).json({ message: 'Failed to fetch reschedule requests' });
+    }
+
     res.json({ data: requests });
   } catch (error) {
     console.error('Error fetching reschedule requests for booking:', error);

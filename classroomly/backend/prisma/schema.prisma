@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -20,7 +20,7 @@ model User {
   avatarUrl    String?  @map("avatar_url")
   bio          String?
   hourlyRate   Float? @map("hourly_rate")
-  subjects     String
+  subjects     String[] // Array of subjects for tutors
   timezone     String   @default("UTC")
   isVerified   Boolean  @default(false) @map("is_verified")
   isActive     Boolean  @default(true) @map("is_active")
@@ -244,47 +244,47 @@ model RescheduleRequest {
 
 // Enums
 enum UserType {
-  TUTOR
-  STUDENT
-  ADMIN
+  tutor
+  student
+  admin
 }
 
 enum BookingStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-  COMPLETED
+  pending
+  confirmed
+  cancelled
+  completed
 }
 
 enum PaymentStatus {
-  PENDING
-  PAID
-  REFUNDED
+  pending
+  paid
+  refunded
 }
 
 enum SessionStatus {
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
+  scheduled
+  in_progress
+  completed
+  cancelled
 }
 
 enum MessageType {
-  TEXT
-  FILE
-  IMAGE
-  SYSTEM
+  text
+  file
+  image
+  system
 }
 
 enum EnrollmentStatus {
-  ACTIVE
-  COMPLETED
-  DROPPED
+  active
+  completed
+  dropped
 }
 
 enum RescheduleStatus {
-  PENDING
-  ACCEPTED
-  DECLINED
-  CANCELLED
+  pending
+  accepted
+  declined
+  cancelled
 } 

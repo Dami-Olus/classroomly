@@ -1,8 +1,8 @@
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
+const supabase = require('../lib/supabase');
+
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
@@ -19,40 +19,71 @@ const authenticateToken = (req, res, next) => {
 // Helper: check if user is participant in class or session
 async function isParticipant(user, classId, sessionId) {
   if (user.userType === 'TUTOR' && classId) {
-    const cls = await prisma.class.findUnique({ where: { id: classId } });
+    const { data: cls, error } = await supabase
+      .from('class')
+      .select('tutorId')
+      .eq('id', classId)
+      .single();
+
+    if (error) throw error;
     if (cls && cls.tutorId === user.id) return true;
   } else if (user.userType === 'STUDENT') {
     if (sessionId) {
-      const session = await prisma.session.findUnique({ where: { id: sessionId }, include: { booking: true } });
-      if (session && session.booking.studentId === user.id) return true;
+      const { data: session, error } = await supabase
+        .from('session')
+        .select('id, studentId')
+        .eq('id', sessionId)
+        .single();
+
+      if (error) throw error;
+      if (session && session.studentId === user.id) return true;
     } else if (classId) {
-      // Check if student has a booking for this class
-      const booking = await prisma.booking.findFirst({ where: { classId, studentId: user.id } });
+      const { data: booking, error } = await supabase
+        .from('booking')
+        .select('id')
+        .eq('classId', classId)
+        .eq('studentId', user.id)
+        .maybeSingle();
+
+      if (error) throw error;
       if (booking) return true;
     }
   }
   return false;
 }
 
-// POST /api/materials - upload material metadata (file upload handled separately)
+// -----------------------------
+// POST /api/materials - upload material metadata
+// -----------------------------
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { classId, sessionId, fileUrl, fileName, tag } = req.body;
+    const { classId, sessionId, fileUrl, fileName, fileSize, fileType, title, description } = req.body;
     const { user } = req;
+
     if (!classId && !sessionId) return res.status(400).json({ message: 'classId or sessionId required' });
-    if (!fileUrl || !fileName || !tag) return res.status(400).json({ message: 'fileUrl, fileName, and tag required' });
-    if (!(await isParticipant(user, classId, sessionId))) return res.status(403).json({ message: 'Not authorized' });
-    const material = await prisma.material.create({
-      data: {
+    if (!fileUrl || !fileName || !title) return res.status(400).json({ message: 'fileUrl, fileName, and title required' });
+
+    const authorized = await isParticipant(user, classId, sessionId);
+    if (!authorized) return res.status(403).json({ message: 'Not authorized' });
+
+    const { data: material, error } = await supabase
+      .from('material')
+      .insert([{
+        tutorId: user.id,
         classId,
-        sessionId,
-        uploaderId: user.id,
-        uploaderType: user.userType,
+        title,
+        description: description || null,
         fileUrl,
         fileName,
-        tag
-      }
-    });
+        fileSize: fileSize || 0,
+        fileType: fileType || 'application/octet-stream',
+        isPublic: false
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
     res.status(201).json({ data: material });
   } catch (error) {
     console.error('Error uploading material:', error);
@@ -60,19 +91,41 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/materials?classId=...&sessionId=...&tag=... - fetch materials
+// -----------------------------
+// GET /api/materials?classId=...&sessionId=... - fetch materials
+// -----------------------------
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { classId, sessionId, tag } = req.query;
+    const { classId, sessionId } = req.query;
     const { user } = req;
+
     if (!classId && !sessionId) return res.status(400).json({ message: 'classId or sessionId required' });
-    if (!(await isParticipant(user, classId, sessionId))) return res.status(403).json({ message: 'Not authorized' });
-    const where = sessionId ? { sessionId } : { classId };
-    if (tag) where.tag = tag;
-    const materials = await prisma.material.findMany({
-      where,
-      orderBy: { uploadedAt: 'desc' }
-    });
+
+    const authorized = await isParticipant(user, classId, sessionId);
+    if (!authorized) return res.status(403).json({ message: 'Not authorized' });
+
+    let filterClassId = classId;
+
+    if (sessionId) {
+      // For sessions, get the classId from the session
+      const { data: session, error } = await supabase
+        .from('session')
+        .select('classId')
+        .eq('id', sessionId)
+        .single();
+
+      if (error) throw error;
+      if (session) filterClassId = session.classId;
+    }
+
+    const { data: materials, error } = await supabase
+      .from('material')
+      .select('*')
+      .eq('classId', filterClassId)
+      .order('createdAt', { ascending: false });
+
+    if (error) throw error;
+
     res.json({ data: materials });
   } catch (error) {
     console.error('Error fetching materials:', error);
@@ -80,4 +133,4 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = router; 
+module.exports = router;

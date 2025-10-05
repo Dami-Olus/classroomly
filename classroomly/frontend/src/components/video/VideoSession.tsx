@@ -1,172 +1,147 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
 
 interface VideoSessionProps {
   sessionId: string;
-  userId: string; // <-- Add this prop for sender_id
+  userId: string;
   userType: 'TUTOR' | 'STUDENT';
   onSessionEnd?: () => void;
 }
 
-interface ChatMessage {
-  id: string;
-  sender_id: string;
-  content: string;
-  message_type: 'text' | 'file' | 'image' | 'system';
-  file_url?: string;
-  file_name?: string;
-  file_size?: number;
-  is_read: boolean;
-  created_at: string;
-}
-
-const SIGNAL_CHANNEL_PREFIX = 'video-session-';
+const SIGNAL_CHANNEL_PREFIX = 'video-signal-';
 
 export default function VideoSession({ sessionId, userId, userType, onSessionEnd }: VideoSessionProps) {
+  const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  // Video/Audio controls
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  
-  // Chat
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [unreadMessages, setUnreadMessages] = useState(0);
-  
-  // Session management
-  const [sessionTime, setSessionTime] = useState(0);
-  const [showEndWarning, setShowEndWarning] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
-  
-  // WebRTC refs
+  const [showEndWarning, setShowEndWarning] = useState(false);
+  const [sessionTime, setSessionTime] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
-  
-  // Chat refs
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-  const messageInputRef = useRef<HTMLInputElement>(null);
-  
-  // Session timer
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Draggable video bubble state
-  const [bubblePos, setBubblePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const bubbleRef = useRef<HTMLDivElement>(null);
-  const lastPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const pendingCandidatesRef = useRef<RTCIceCandidate[]>([]);
 
-  // ICE candidate queueing for WebRTC
-  const pendingCandidatesRef = useRef<any[]>([]);
+  // Draggable bubble state
+  const [dragging, setDragging] = useState(false);
+  const [bubblePos, setBubblePos] = useState({ x: 20, y: 20 });
 
-  // Set default position on mount (bottom-right, with margin)
-  useEffect(() => {
-    if (!isScreenSharing) {
-      const margin = 24;
-      const w = 192, h = 144; // w-48 h-36
-      setBubblePos({
-        x: window.innerWidth - w - margin,
-        y: window.innerHeight - h - margin
-      });
-      lastPosRef.current = {
-        x: window.innerWidth - w - margin,
-        y: window.innerHeight - h - margin
-      };
-    }
-  }, []);
-
-  // Snap to bottom-right during screen sharing, restore after
-  useEffect(() => {
-    if (isScreenSharing) {
-      const margin = 24;
-      const w = 192, h = 144;
-      setBubblePos({
-        x: window.innerWidth - w - margin,
-        y: window.innerHeight - h - margin
-      });
-    } else {
-      setBubblePos(lastPosRef.current);
-    }
-  }, [isScreenSharing]);
-
-  // Drag handlers
-  const onDragStart = (e: React.MouseEvent) => {
-    setDragging(true);
-    setDragOffset({
-      x: e.clientX - bubblePos.x,
-      y: e.clientY - bubblePos.y
-    });
-  };
-  const onDrag = (e: MouseEvent) => {
-    if (dragging && !isScreenSharing) {
-      const x = e.clientX - dragOffset.x;
-      const y = e.clientY - dragOffset.y;
-      setBubblePos({ x, y });
-      lastPosRef.current = { x, y };
-    }
-  };
-  const onDragEnd = () => setDragging(false);
-  useEffect(() => {
-    if (dragging) {
-      window.addEventListener('mousemove', onDrag);
-      window.addEventListener('mouseup', onDragEnd);
-    } else {
-      window.removeEventListener('mousemove', onDrag);
-      window.removeEventListener('mouseup', onDragEnd);
-    }
-    return () => {
-      window.removeEventListener('mousemove', onDrag);
-      window.removeEventListener('mouseup', onDragEnd);
-    };
-  }, [dragging, dragOffset, isScreenSharing]);
-  
-  // Initialize video session
+  // Initialize session
   useEffect(() => {
     initializeSession();
-    return () => {
-      cleanupSession();
-    };
+    return () => cleanupSession();
   }, []);
-  
-  // Auto-scroll chat to bottom
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
-  
+
   // Session timer
   useEffect(() => {
     sessionTimerRef.current = setInterval(() => {
       setSessionTime(prev => prev + 1);
     }, 1000);
-    
+
     return () => {
       if (sessionTimerRef.current) {
         clearInterval(sessionTimerRef.current);
       }
     };
   }, []);
-  
+
+  // Draggable bubble
+  useEffect(() => {
+    if (dragging) {
+      const onMouseMove = (e: MouseEvent) => {
+        if (bubbleRef.current) {
+          const rect = bubbleRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.width / 2;
+          const y = e.clientY - rect.height / 2;
+          setBubblePos({ x: Math.max(0, x), y: Math.max(0, y) });
+        }
+      };
+
+      const onMouseUp = () => setDragging(false);
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+
+      return () => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      };
+    }
+  }, [dragging]);
+
+  const onDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  };
+
+  const onDrag = (e: MouseEvent) => {
+    if (dragging && bubbleRef.current) {
+      const rect = bubbleRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.width / 2;
+      const y = e.clientY - rect.height / 2;
+      setBubblePos({ x: Math.max(0, x), y: Math.max(0, y) });
+    }
+  };
+
+  const onDragEnd = () => setDragging(false);
+
   const initializeSession = async () => {
     try {
       setIsConnecting(true);
       setError(null);
       
-      // Get user media
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
+      // Check if mediaDevices is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera and microphone access is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.');
+      }
+      
+      // Check if we're on HTTPS (required for getUserMedia in production)
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        throw new Error('Camera and microphone access requires HTTPS. Please use HTTPS or localhost for development.');
+      }
+      
+      // Try to get user media with fallback options
+      let stream;
+      try {
+        // First try with both video and audio
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true
+        });
+      } catch (videoAudioError) {
+        console.log('Video + audio failed, trying audio only:', videoAudioError);
+        try {
+          // Fallback to audio only
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: true
+          });
+          setError('Video access denied. Audio-only mode enabled.');
+        } catch (audioError) {
+          console.log('Audio only failed, trying video only:', audioError);
+          try {
+            // Fallback to video only
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false
+            });
+            setError('Microphone access denied. Video-only mode enabled.');
+          } catch (videoError) {
+            // All options failed
+            throw new Error('Camera and microphone access denied. Please check your browser permissions and ensure you have a camera and microphone connected.');
+          }
+        }
+      }
       
       localStreamRef.current = stream;
       
@@ -212,7 +187,8 @@ export default function VideoSession({ sessionId, userId, userType, onSessionEnd
       
     } catch (err) {
       console.error('Error initializing session:', err);
-      setError('Failed to access camera/microphone. Please check permissions.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to access camera/microphone. Please check permissions.';
+      setError(errorMessage);
       setIsConnecting(false);
     }
   };
@@ -342,45 +318,6 @@ export default function VideoSession({ sessionId, userId, userType, onSessionEnd
     }
   }, [isScreenSharing]);
   
-  // Real-time chat logic
-  useEffect(() => {
-    // Subscribe to new messages for this session
-    const chatSub = supabase
-      .channel(`chat-session-${sessionId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `session_id=eq.${sessionId}` }, (payload) => {
-        setMessages((prev) => [...prev, payload.new as ChatMessage]);
-      })
-      .subscribe();
-    // Fetch initial messages
-    (async () => {
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('session_id', sessionId)
-        .order('created_at', { ascending: true });
-      if (data) setMessages(data);
-    })();
-    return () => {
-      supabase.removeChannel(chatSub);
-    };
-  }, [sessionId]);
-
-  const sendMessage = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newMessage.trim()) {
-      await supabase.from('messages').insert([
-        {
-          session_id: sessionId,
-          sender_id: userId,
-          content: newMessage.trim(),
-          message_type: 'text',
-          is_read: false
-        },
-      ]);
-      setNewMessage('');
-    }
-  }, [newMessage, userId, sessionId]);
-  
   // Session management
   const endSession = useCallback(() => {
     if (confirm('Are you sure you want to end this session?')) {
@@ -408,7 +345,6 @@ export default function VideoSession({ sessionId, userId, userType, onSessionEnd
         toggleMute();
       }
     };
-    
     document.addEventListener('keydown', handleKeyPress);
     return () => document.removeEventListener('keydown', handleKeyPress);
   }, [toggleMute]);
@@ -428,12 +364,42 @@ export default function VideoSession({ sessionId, userId, userType, onSessionEnd
             <div className="text-red-500 text-6xl mb-4">⚠️</div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">Connection Error</h2>
             <p className="text-gray-600 mb-4">{error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-            >
-              Try Again
-            </button>
+            
+            {/* Additional help text based on error type */}
+            {error.includes('permission') || error.includes('denied') ? (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4 text-left">
+                <h3 className="font-semibold text-yellow-800 mb-2">How to fix:</h3>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  <li>• Click the camera/microphone icon in your browser's address bar</li>
+                  <li>• Select "Allow" for camera and microphone access</li>
+                  <li>• Refresh the page and try again</li>
+                  <li>• Make sure your camera and microphone are connected and working</li>
+                </ul>
+              </div>
+            ) : error.includes('HTTPS') ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4 text-left">
+                <h3 className="font-semibold text-blue-800 mb-2">Development Note:</h3>
+                <p className="text-sm text-blue-700">
+                  Camera access requires HTTPS in production. For development, use localhost or 127.0.0.1.
+                </p>
+              </div>
+            ) : null}
+            
+            <div className="flex space-x-3 justify-center">
+              <button
+                onClick={initializeSession}
+                disabled={isConnecting}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isConnecting ? 'Retrying...' : 'Retry Connection'}
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
+              >
+                Reload Page
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -441,7 +407,7 @@ export default function VideoSession({ sessionId, userId, userType, onSessionEnd
   }
   
   return (
-    <div className="min-h-screen bg-gray-900 flex">
+    <div className="min-h-screen bg-gray-900 flex flex-col">
       {/* Main Video Area */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
@@ -581,66 +547,6 @@ export default function VideoSession({ sessionId, userId, userType, onSessionEnd
               </svg>
             </button>
           </div>
-        </div>
-      </div>
-      
-      {/* Chat Sidebar */}
-      <div className="w-80 bg-gray-800 flex flex-col">
-        <div className="p-4 border-b border-gray-700">
-          <h3 className="text-white font-semibold">Chat</h3>
-          {unreadMessages > 0 && (
-            <span className="ml-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full">
-              {unreadMessages}
-            </span>
-          )}
-        </div>
-        
-        {/* Messages */}
-        <div 
-          ref={chatContainerRef}
-          className="flex-1 overflow-y-auto p-4 space-y-3"
-        >
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.sender_id === userId ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-xs px-3 py-2 rounded-lg ${
-                  message.sender_id === userId
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-white'
-                }`}
-              >
-                <div className="text-xs opacity-75 mb-1">{message.sender_id}</div>
-                <div>{message.content}</div>
-                <div className="text-xs opacity-75 mt-1">
-                  {new Date(message.created_at).toLocaleTimeString()}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        {/* Message Input */}
-        <div className="p-4 border-t border-gray-700">
-          <form onSubmit={sendMessage} className="flex space-x-2">
-            <input
-              ref={messageInputRef}
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="submit"
-              disabled={!newMessage.trim()}
-              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
-            >
-              Send
-            </button>
-          </form>
         </div>
       </div>
       

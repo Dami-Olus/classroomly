@@ -1,71 +1,80 @@
-const prisma = require('../lib/prisma');
+const jwt = require('jsonwebtoken');
+const supabase = require('../lib/supabase');
 
 /**
  * Middleware to authenticate user and attach user info to request
- * This is a placeholder - you'll need to implement actual JWT verification
  */
 const authenticateUser = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    console.log('Auth header:', authHeader); // Debug log
-    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('No auth header or invalid format'); // Debug log
       return res.status(401).json({
         success: false,
         message: 'Access token required'
       });
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-    
+    const token = authHeader.substring(7);
+
     // Verify JWT token
-    const jwt = require('jsonwebtoken');
-    console.log('JWT Secret:', process.env.JWT_SECRET ? 'Present' : 'Missing'); // Debug log
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (jwtError) {
-      console.error('JWT error:', jwtError);
+      console.error('JWT error:', jwtError.message);
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired token'
       });
     }
-    console.log('Decoded token:', decoded); // Debug log
+
     const userId = decoded.id;
-    
-    // Verify user exists and is active
-    const user = await prisma.user.findUnique({
-      where: {
-        id: userId,
-        isActive: true
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        userType: true,
-        isVerified: true
-      }
-    });
+
+    // Get user from Supabase
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, user_type, is_verified, is_active')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error('Supabase error fetching user:', error.message);
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid or expired token'
+        message: 'User not found'
       });
     }
 
-    if (!user.isVerified) {
+    if (!user.is_active) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account has been deactivated'
+      });
+    }
+
+    if (!user.is_verified) {
       return res.status(403).json({
         success: false,
         message: 'Account not verified'
       });
     }
 
-    req.user = user;
+    // Attach user to request
+    req.user = {
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      userType: user.user_type
+    };
+
     next();
   } catch (error) {
     console.error('Authentication error:', error);
@@ -77,78 +86,40 @@ const authenticateUser = async (req, res, next) => {
 };
 
 /**
- * Middleware to check if user is a tutor
+ * Middleware to check user role
  */
-const requireTutor = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required'
-    });
-  }
-
-  if (req.user.userType !== 'TUTOR') {
-    return res.status(403).json({
-      success: false,
-      message: 'Tutor access required'
-    });
-  }
-
-  next();
+const requireRole = (allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Authentication required' 
+      });
+    }
+    
+    if (!allowedRoles.includes(req.user.userType)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Insufficient permissions' 
+      });
+    }
+    
+    next();
+  };
 };
 
-/**
- * Middleware to check if user is a student
- */
-const requireStudent = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required'
-    });
-  }
+const requireTutor = requireRole(['tutor']);
+const requireStudent = requireRole(['student']);
+const requireAdmin = requireRole(['admin']);
 
-  if (req.user.userType !== 'STUDENT') {
-    return res.status(403).json({
-      success: false,
-      message: 'Student access required'
-    });
-  }
-
-  next();
-};
-
-/**
- * Middleware to check if user is an admin
- */
-const requireAdmin = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication required'
-    });
-  }
-
-  if (req.user.userType !== 'ADMIN') {
-    return res.status(403).json({
-      success: false,
-      message: 'Admin access required'
-    });
-  }
-
-  next();
-};
-
-// Utility to verify JWT and return payload
-function verifyToken(token) {
-  const jwt = require('jsonwebtoken');
-  return jwt.verify(token, process.env.JWT_SECRET);
-}
+// Optional: Allow multiple roles
+const requireTutorOrAdmin = requireRole(['tutor', 'admin']);
 
 module.exports = {
   authenticateUser,
   requireTutor,
   requireStudent,
   requireAdmin,
-  verifyToken
-}; 
+  requireRole, // Export for custom role checks
+  requireTutorOrAdmin
+};

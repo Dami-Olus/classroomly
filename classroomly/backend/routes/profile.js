@@ -1,6 +1,6 @@
 const express = require('express');
 const { z } = require('zod');
-const prisma = require('../lib/prisma');
+const supabase = require('../lib/supabase'); // Correct supabase client
 const { authenticateUser } = require('../middleware/auth');
 const { validateBody } = require('../middleware/validation');
 
@@ -13,35 +13,22 @@ const updateProfileSchema = z.object({
   avatarUrl: z.string().url().optional(),
   bio: z.string().max(1000).optional(),
   hourlyRate: z.number().positive().optional(),
-  subjects: z.string().optional(),
+  subjects: z.array(z.string()).optional(),
   timezone: z.string().max(50).optional()
 });
 
 // GET /api/profile - Get current user's profile
 router.get('/', authenticateUser, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        userType: true,
-        avatarUrl: true,
-        bio: true,
-        hourlyRate: true,
-        subjects: true,
-        timezone: true,
-        isVerified: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, user_type, avatar_url, bio, hourly_rate, subjects, timezone, is_verified, is_active, created_at, updated_at')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error) throw error;
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
     return res.status(200).json({ success: true, data: user });
   } catch (error) {
     console.error('Profile fetch error:', error);
@@ -52,7 +39,8 @@ router.get('/', authenticateUser, async (req, res) => {
 // PUT /api/profile - Update current user's profile
 router.put('/', authenticateUser, validateBody(updateProfileSchema), async (req, res) => {
   try {
-    const updateData = req.validatedBody;
+    const updateData = { ...req.validatedBody };
+
     // Prevent updating email or userType
     delete updateData.email;
     delete updateData.userType;
@@ -62,31 +50,20 @@ router.put('/', authenticateUser, validateBody(updateProfileSchema), async (req,
       return res.status(403).json({ success: false, message: 'Only tutors can update hourly rate and subjects' });
     }
 
-    // Convert subjects array to string if provided as array
+    // Convert subjects array to string if needed
     if (updateData.subjects && Array.isArray(updateData.subjects)) {
       updateData.subjects = updateData.subjects.join(',');
     }
 
-    const updated = await prisma.user.update({
-      where: { id: req.user.id },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        userType: true,
-        avatarUrl: true,
-        bio: true,
-        hourlyRate: true,
-        subjects: true,
-        timezone: true,
-        isVerified: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
+    const { data: updated, error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', req.user.id)
+      .select('id, email, first_name, last_name, user_type, avatar_url, bio, hourly_rate, subjects, timezone, is_verified, is_active, created_at, updated_at')
+      .single();
+
+    if (error) throw error;
+
     return res.status(200).json({ success: true, message: 'Profile updated', data: updated });
   } catch (error) {
     console.error('Profile update error:', error);
@@ -94,4 +71,4 @@ router.put('/', authenticateUser, validateBody(updateProfileSchema), async (req,
   }
 });
 
-module.exports = router; 
+module.exports = router;
